@@ -8,6 +8,7 @@ llm:
 tapd:
   api_base: "https://api.tapd.cn"
   access_token: "your-tapd-personal-token"
-  nick: "your-tapd-nickname"
-  company_id: "your-company-id"
-  owner: "your-username"
+  # 以下为可选字段，token 可能已足够识别身份；如 API 报错再填写
+  # nick: "your-tapd-nickname"
+  # company_id: "your-company-id"
+  # owner: "your-username"

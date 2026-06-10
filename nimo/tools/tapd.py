@@ -45,10 +45,12 @@ async def _api_post(path: str, body: dict | None = None) -> dict:
 )
 async def tapd_list_projects() -> ToolResult:
     try:
-        data = await _api_get("/workspaces/user_participant_projects", params={
-            "nick": _config.tapd.nick,
-            "company_id": _config.tapd.company_id,
-        })
+        params = {}
+        if _config.tapd.nick:
+            params["nick"] = _config.tapd.nick
+        if _config.tapd.company_id:
+            params["company_id"] = _config.tapd.company_id
+        data = await _api_get("/workspaces/user_participant_projects", params=params)
         if data.get("status") != 1:
             return ToolResult(success=False, error=f"TAPD 返回错误：{data.get('info', '未知错误')}")
         return ToolResult(success=True, data=data["data"])

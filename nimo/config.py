@@ -20,9 +20,9 @@ class LLMConfig:
 class TapdConfig:
     api_base: str
     access_token: str
-    nick: str
-    company_id: str
-    owner: str
+    nick: str = ""
+    company_id: str = ""
+    owner: str = ""
 
 
 @dataclass
@@ -54,9 +54,9 @@ def load_config(path: str = "config.yaml") -> Config:
         if field not in raw["llm"]:
             raise ConfigError(f"配置文件缺少必填字段：llm.{field}")
 
-    required_tapd_fields = ["api_base", "access_token", "nick", "company_id", "owner"]
-    for field in required_tapd_fields:
-        if field not in raw["tapd"]:
+    tapd_raw = raw["tapd"]
+    for field in ["api_base", "access_token"]:
+        if field not in tapd_raw:
             raise ConfigError(f"配置文件缺少必填字段：tapd.{field}")
 
     llm = LLMConfig(
@@ -67,10 +67,10 @@ def load_config(path: str = "config.yaml") -> Config:
         history_rounds=raw["llm"]["history_rounds"],
     )
     tapd = TapdConfig(
-        api_base=raw["tapd"]["api_base"],
-        access_token=_env_override("tapd.access_token", raw["tapd"]["access_token"]),
-        nick=raw["tapd"]["nick"],
-        company_id=raw["tapd"]["company_id"],
-        owner=raw["tapd"]["owner"],
+        api_base=tapd_raw["api_base"],
+        access_token=_env_override("tapd.access_token", tapd_raw["access_token"]),
+        nick=tapd_raw.get("nick", ""),
+        company_id=tapd_raw.get("company_id", ""),
+        owner=tapd_raw.get("owner", ""),
     )
     return Config(llm=llm, tapd=tapd)
