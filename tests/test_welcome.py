@@ -1,7 +1,6 @@
 import io
-import re
 import sys
-from nimo.welcome import NIMO_LOGO, TIPS, _build_top, _build_bottom, _build_row, _color_text, print_welcome
+from nimo.welcome import NIMO_LOGO, TIPS, _build_top, _build_bottom, _build_row, _color_text, _visible_width, print_welcome
 
 
 class TestConstants:
@@ -89,11 +88,3 @@ class TestPrintWelcome:
         assert "╯" in text
         assert len(text.splitlines()) >= 5
 
-
-_ANSI_RE = re.compile(r"\033\[[0-9;]*m")
-
-
-def _visible_width(s: str) -> int:
-    """计算去除 ANSI escape code 后的可见字符宽度。"""
-    no_ansi = _ANSI_RE.sub("", s)
-    return len(no_ansi)

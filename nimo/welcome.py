@@ -9,7 +9,6 @@ RIGHT_W = 37
 # ANSI 颜色定义
 GRAY = "\033[90m"
 CYAN = "\033[38;2;36;168;208m"
-ORANGE = "\033[38;2;242;138;56m"
 RESET = "\033[0m"
 
 # 预编译 ANSI escape 正则
