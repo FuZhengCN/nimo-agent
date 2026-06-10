@@ -16,6 +16,7 @@ python -m nimo.main          # 需要项目根目录有 config.yaml
 pytest tests/ -v
 
 # 单个测试文件
+pytest tests/test_welcome.py -v
 pytest tests/test_agent.py -v
 
 # 单个测试用例
@@ -31,8 +32,11 @@ main.py → agent.py → llm/client.py
                    → memory/history.py
                    → tools/registry.py
         → config.py
+        → welcome.py
         → tools/tapd.py (init + 触发 @register_tool)
 ```
+
+`main()` 先 `load_config()`，再 `build_agent(config)` + `print_welcome()`，最后进入输入循环。`build_agent()` 接收 `Config` 对象（非路径字符串），负责 `init_tapd()` + 构造 `Agent`。
 
 ### Agent 核心循环
 
@@ -64,6 +68,7 @@ main.py → agent.py → llm/client.py
 | `tools/registry.py` | `ToolRegistry` 单例 + `@register_tool` 装饰器；`reset()` 用于测试隔离 |
 | `tools/tapd.py` | 模块级 `_config`/`_client`，`init_tapd()` 初始化；查项目列表/填工时两个工具 |
 | `config.py` | `load_config()` 加载 YAML + `_env_override()` 环境变量覆盖（`LLM_API_KEY`、`TAPD_ACCESS_TOKEN`） |
+| `welcome.py` | `print_welcome(model, cwd, version)` 启动欢迎画面；自动检测终端宽度，左 Logo + 右 Tips 双栏布局，24bit ANSI 真彩色 |
 
 ### 配置
 
@@ -89,3 +94,4 @@ tapd:
 - **Agent 循环**通过 mock `LLMClient.chat` 和 `ToolRegistry.execute` 测试
 - **单例 Registry**测试通过 `autouse=True` fixture + `reset()` 保证隔离
 - **TAPD 工具测试**在模块级 import（`@register_tool` 只触发一次），内部函数用 `patch.object` mock
+- **Welcome 模块**测试覆盖常量、ANSI 颜色、边框宽度、行构建、`print_welcome` 端到端输出；`sys.stdout` 操作用 `try/finally` 保护
