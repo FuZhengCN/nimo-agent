@@ -20,12 +20,16 @@ def init_tapd(config: Config) -> None:
 
 
 async def _api_get(path: str, params: dict | None = None) -> dict:
+    if _client is None:
+        raise RuntimeError("TAPD 客户端未初始化，请先调用 init_tapd()")
     resp = await _client.get(path, params=params)
     resp.raise_for_status()
     return resp.json()
 
 
 async def _api_post(path: str, body: dict | None = None) -> dict:
+    if _client is None:
+        raise RuntimeError("TAPD 客户端未初始化，请先调用 init_tapd()")
     resp = await _client.post(path, data=body)
     resp.raise_for_status()
     return resp.json()

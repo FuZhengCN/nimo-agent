@@ -62,7 +62,19 @@ class Agent:
             })
 
             for tc in message.tool_calls:
-                args = json.loads(tc.function.arguments)
+                try:
+                    args = json.loads(tc.function.arguments)
+                except json.JSONDecodeError as e:
+                    self._history.add({
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "content": json.dumps({
+                            "success": False,
+                            "data": None,
+                            "error": f"工具参数 JSON 解析失败：{e}",
+                        }, ensure_ascii=False),
+                    })
+                    continue
                 result = await self._registry.execute(tc.function.name, args)
                 self._history.add({
                     "role": "tool",

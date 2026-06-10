@@ -49,6 +49,16 @@ def load_config(path: str = "config.yaml") -> Config:
         if section not in raw:
             raise ConfigError(f"配置文件缺少必填段：{section}")
 
+    required_llm_fields = ["api_key", "base_url", "model", "max_tool_rounds", "history_rounds"]
+    for field in required_llm_fields:
+        if field not in raw["llm"]:
+            raise ConfigError(f"配置文件缺少必填字段：llm.{field}")
+
+    required_tapd_fields = ["api_base", "access_token", "nick", "company_id", "owner"]
+    for field in required_tapd_fields:
+        if field not in raw["tapd"]:
+            raise ConfigError(f"配置文件缺少必填字段：tapd.{field}")
+
     llm = LLMConfig(
         api_key=_env_override("llm.api_key", raw["llm"]["api_key"]),
         base_url=raw["llm"]["base_url"],
