@@ -1,6 +1,11 @@
 import asyncio
 import logging
-from openai import AsyncOpenAI
+from openai import (
+    AsyncOpenAI,
+    RateLimitError,
+    APITimeoutError,
+    InternalServerError,
+)
 from openai.types.chat import ChatCompletion
 from nimo.config import Config
 
@@ -19,7 +24,7 @@ class LLMClient:
             timeout=60.0,
         )
         self.model = config.llm.model
-        self._max_retries = 3
+        self._max_attempts = 4  # 1 次初始调用 + 3 次重试
 
     async def chat(
         self,
@@ -32,7 +37,9 @@ class LLMClient:
             full_messages.append({"role": "system", "content": system_prompt})
         full_messages.extend(messages)
 
-        for attempt in range(self._max_retries):
+        RETRYABLE_ERRORS = (RateLimitError, APITimeoutError, InternalServerError)
+
+        for attempt in range(self._max_attempts):
             try:
                 kwargs = {
                     "model": self.model,
@@ -41,9 +48,11 @@ class LLMClient:
                 if tools:
                     kwargs["tools"] = tools
                 return await self.client.chat.completions.create(**kwargs)
-            except Exception as e:
-                if attempt == self._max_retries - 1:
-                    raise LLMError(f"LLM 调用失败，已重试 {self._max_retries} 次：{e}")
+            except RETRYABLE_ERRORS as e:
+                if attempt == self._max_attempts - 1:
+                    raise LLMError(
+                        f"LLM 调用失败，已重试 {self._max_attempts - 1} 次：{e}"
+                    ) from e
                 wait = 2 ** attempt
                 logger.warning(f"LLM 调用失败（第 {attempt + 1} 次），{wait}s 后重试：{e}")
                 await asyncio.sleep(wait)
