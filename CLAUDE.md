@@ -9,11 +9,17 @@ Nimo 是一个 CLI AI Agent，基于 DeepSeek function calling。用户通过自
 ## 常用命令
 
 ```bash
+# 开发安装
+pip install -e ".[dev]"
+
 # 运行
 python -m nimo.main          # 需要项目根目录有 config.yaml
 
 # 全部测试
 pytest tests/ -v
+
+# 覆盖率报告
+pytest tests/ --cov=nimo --cov-report=term-missing
 
 # 单个测试文件
 pytest tests/test_welcome.py -v
@@ -50,7 +56,7 @@ main.py → agent.py → llm/client.py
 └─ 超限 → 返回错误提示
 ```
 
-运行时：`agent.run()` 前显示灰色 `⏳ 思考中...` 提示，完成后清除，回复包在 ANSI 卡片框（`print_response_box()`）内输出。HTTP 请求日志（httpx/openai）已静默到 WARNING 级别，不污染控制台。
+运行时：`agent.run()` 前显示灰色 `⏳ 思考中...` 提示，完成后清除，回复包在蓝青色 ANSI 卡片框（`print_response_box()`）内输出。输入提示符 `>` 和键入文字为暖橙色（RGB 242,138,56）。HTTP 请求日志（httpx/openai）已静默到 WARNING 级别，不污染控制台。
 
 ### 工具注册系统
 
@@ -60,7 +66,7 @@ main.py → agent.py → llm/client.py
 
 ### System Prompt
 
-`nimo/prompts/system.md` 定义 LLM 的行为准则和 `tapd_cli` 命令参考。`Agent._load_system_prompt()` 读取后作为 system message 传入每次 LLM 调用。
+`nimo/prompts/system.md` 定义 LLM 的行为准则和 `tapd_cli` 命令参考。`Agent._load_system_prompt()` 通过 `Path(__file__)` 定位文件（非硬编码相对路径），读取后作为 system message 传入每次 LLM 调用。
 
 ### 外部二进制
 
@@ -70,13 +76,13 @@ main.py → agent.py → llm/client.py
 
 | 模块 | 关键设计 |
 |------|---------|
-| `agent.py` | `Agent.run()` 编排循环，`print()` 输出流程供学习观察 |
+| `agent.py` | `Agent.run()` 编排循环，流程通过 `print()` 输出供学习观察；`_load_system_prompt()` 通过 `Path(__file__)` 定位 |
 | `llm/client.py` | `LLMClient.chat()` 封装 DeepSeek（兼容 OpenAI SDK），4次尝试（1+3重试），仅对 RateLimitError/APITimeoutError/InternalServerError 重试 |
 | `memory/history.py` | `ConversationHistory` 按轮次滑动窗口截断，每轮=user消息+后续assistant/tool消息 |
 | `tools/registry.py` | `ToolRegistry` 单例 + `@register_tool` 装饰器；`reset()` 用于测试隔离 |
-| `tools/tapd.py` | `init_tapd()` 存储配置；唯一工具 `tapd_cli` 调用外部 `tapd.exe` 二进制，覆盖所有 TAPD 操作（查项目、需求/任务/缺陷 CRUD、填工时、迭代、评论、Wiki、发布评审等） |
+| `tools/tapd.py` | `init_tapd()` 存储配置；唯一工具 `tapd_cli` 调用外部 `tapd.exe` 二进制；`_validate_args()` 子命令白名单 + 路径遍历校验防止 prompt 注入 |
 | `config.py` | `load_config()` 加载 YAML + `_env_override()` 环境变量覆盖（`LLM_API_KEY`、`TAPD_ACCESS_TOKEN`） |
-| `welcome.py` | `print_welcome(model, cwd, version)` 启动欢迎画面；自动检测终端宽度，左 Logo + 右 Tips 双栏布局，24bit ANSI 真彩色 |
+| `welcome.py` | `print_welcome(model, cwd, version)` 启动欢迎画面 + `print_response_box()` 回复卡片；自动检测终端宽度，左 Logo + 右 Tips 双栏布局，24bit ANSI 真彩色 |
 
 ### 配置
 
@@ -87,7 +93,7 @@ llm:
   api_key: "sk-xxx"
   base_url: "https://api.deepseek.com"
   model: "deepseek-chat"
-  max_tool_rounds: 5
+  max_tool_rounds: 10
   history_rounds: 10
 tapd:
   api_base: "https://api.tapd.cn"
@@ -98,8 +104,7 @@ tapd:
 
 ### 测试
 
-- **工具函数**可脱离 LLM 独立测试（mock `_api_get`/`_api_post`）
-- **Agent 循环**通过 mock `LLMClient.chat` 和 `ToolRegistry.execute` 测试
-- **单例 Registry**测试通过 `autouse=True` fixture + `reset()` 保证隔离
-- **TAPD 工具测试**在模块级 import（`@register_tool` 只触发一次），mock `asyncio.create_subprocess_exec` 验证 CLI 调用
+- **Agent 循环**通过 mock `LLMClient.chat` 和 `ToolRegistry.execute` 测试，覆盖正常路径及 JSON 解析失败、系统提示文件缺失等错误路径
+- **单例 Registry**测试通过 `reset()` 保证隔离
+- **TAPD 工具测试**在模块级 import（`@register_tool` 只触发一次），mock `asyncio.create_subprocess_exec` 验证 CLI 调用；`_validate_args()` 校验逻辑单独测试
 - **Welcome 模块**测试覆盖常量、ANSI 颜色、边框宽度、行构建、`print_welcome` 端到端输出；`sys.stdout` 操作用 `try/finally` 保护

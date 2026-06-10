@@ -142,8 +142,8 @@ def print_response_box(text: str) -> None:
             para = para[cut:]
         lines.append(para)
 
-    top = f"{GRAY}╭─ Nimo {'─' * (box_w - 9)}╮{RESET}"
-    bottom = f"{GRAY}╰{'─' * (box_w - 2)}╯{RESET}"
+    top = f"{CYAN}╭─ Nimo {'─' * (box_w - 9)}╮{RESET}"
+    bottom = f"{CYAN}╰{'─' * (box_w - 2)}╯{RESET}"
 
     print(top)
     for line in lines:

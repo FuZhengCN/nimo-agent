@@ -11,6 +11,9 @@ from nimo.tools.tapd import init_tapd
 
 logger = logging.getLogger(__name__)
 
+ORANGE = "\033[38;2;242;138;56m"
+RESET = "\033[0m"
+
 
 async def build_agent(config: Config) -> Agent:
     await init_tapd(config)
@@ -29,7 +32,7 @@ async def main() -> None:
     print_welcome(model=config.llm.model, cwd=os.getcwd(), version="0.1.0")
     while True:
         try:
-            user_input = input("> ")
+            user_input = input(f"{ORANGE}> ")
         except (EOFError, KeyboardInterrupt):
             print("\n再见！")
             break
