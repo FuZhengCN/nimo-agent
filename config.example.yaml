@@ -1,0 +1,13 @@
+llm:
+  api_key: "sk-your-deepseek-key"
+  base_url: "https://api.deepseek.com"
+  model: "deepseek-chat"
+  max_tool_rounds: 5
+  history_rounds: 10
+
+tapd:
+  api_base: "https://api.tapd.cn"
+  access_token: "your-tapd-personal-token"
+  nick: "your-tapd-nickname"
+  company_id: "your-company-id"
+  owner: "your-username"
