@@ -24,10 +24,10 @@ NIMO_LOGO = [
 ]
 
 TIPS = [
-    "输入 /help 查看所有可用命令",
-    "/exit 退出程序",
-    "查 TAPD 项目：输入\"我有哪些项目\"",
-    "填工时：输入\"帮我填工时\"",
+    "Type /help for available commands",
+    "/exit to quit",
+    "Check projects: \"show my projects\"",
+    "Log hours: \"help me log hours\"",
 ]
 
 
