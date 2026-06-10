@@ -3,6 +3,10 @@ import yaml
 from dataclasses import dataclass
 
 
+class ConfigError(Exception):
+    pass
+
+
 @dataclass
 class LLMConfig:
     api_key: str
@@ -33,8 +37,17 @@ def _env_override(key: str, default: str) -> str:
 
 
 def load_config(path: str = "config.yaml") -> Config:
-    with open(path, "r", encoding="utf-8") as f:
-        raw = yaml.safe_load(f)
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            raw = yaml.safe_load(f)
+    except FileNotFoundError:
+        raise ConfigError(f"配置文件未找到：{path}")
+    except yaml.YAMLError as e:
+        raise ConfigError(f"配置文件 YAML 格式错误 {path}：{e}")
+
+    for section in ["llm", "tapd"]:
+        if section not in raw:
+            raise ConfigError(f"配置文件缺少必填段：{section}")
 
     llm = LLMConfig(
         api_key=_env_override("llm.api_key", raw["llm"]["api_key"]),

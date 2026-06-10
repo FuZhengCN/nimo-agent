@@ -1,7 +1,8 @@
 import os
 import tempfile
 import pytest
-from nimo.config import Config, LLMConfig, TapdConfig, load_config
+import yaml
+from nimo.config import Config, ConfigError, LLMConfig, TapdConfig, load_config
 
 
 def test_load_config_from_yaml():
@@ -65,3 +66,38 @@ tapd:
         os.unlink(tmp_path)
         del os.environ["LLM_API_KEY"]
         del os.environ["TAPD_ACCESS_TOKEN"]
+
+
+def test_missing_file_raises_error():
+    with pytest.raises(ConfigError, match="配置文件未找到"):
+        load_config("nonexistent_xyz.yaml")
+
+
+def test_malformed_yaml_raises_error():
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        f.write("llm: [unclosed list\n")
+        tmp_path = f.name
+    try:
+        with pytest.raises(ConfigError, match="配置文件 YAML 格式错误"):
+            load_config(tmp_path)
+    finally:
+        os.unlink(tmp_path)
+
+
+def test_missing_section_raises_error():
+    yaml_content = """
+llm:
+  api_key: "sk-test"
+  base_url: "https://api.deepseek.com"
+  model: "deepseek-chat"
+  max_tool_rounds: 5
+  history_rounds: 10
+"""
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        f.write(yaml_content)
+        tmp_path = f.name
+    try:
+        with pytest.raises(ConfigError, match="配置文件缺少必填段"):
+            load_config(tmp_path)
+    finally:
+        os.unlink(tmp_path)
