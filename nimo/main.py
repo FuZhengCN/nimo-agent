@@ -1,7 +1,9 @@
 import asyncio
 import logging
+import os
 from nimo.config import load_config
 from nimo.agent import Agent
+from nimo.welcome import print_welcome
 
 # Import to trigger tool registration
 import nimo.tools.tapd  # noqa: F401
@@ -10,8 +12,7 @@ from nimo.tools.tapd import init_tapd
 logger = logging.getLogger(__name__)
 
 
-def build_agent(config_path: str = "config.yaml") -> Agent:
-    config = load_config(config_path)
+def build_agent(config) -> Agent:
     init_tapd(config)
     return Agent(config)
 
@@ -21,8 +22,9 @@ async def main() -> None:
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
-    agent = build_agent()
-    print("Nimo 就绪，输入 /exit 退出")
+    config = load_config()
+    agent = build_agent(config)
+    print_welcome(model=config.llm.model, cwd=os.getcwd(), version="0.1.0")
     while True:
         try:
             user_input = input("> ")
@@ -34,10 +36,16 @@ async def main() -> None:
             break
         if not user_input.strip():
             continue
-        response = await agent.run(user_input)
-        print(response)
-        print()
+        try:
+            response = await agent.run(user_input)
+            print(response)
+            print()
+        except KeyboardInterrupt:
+            print("\n已取消，输入 /exit 退出")
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\n再见！")
