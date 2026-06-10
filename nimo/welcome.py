@@ -3,7 +3,6 @@
 import re
 
 # 布局常量
-WIDTH = 90
 LEFT_W = 50
 RIGHT_W = 37
 
@@ -11,8 +10,10 @@ RIGHT_W = 37
 GRAY = "\033[90m"
 CYAN = "\033[38;2;36;168;208m"
 ORANGE = "\033[38;2;242;138;56m"
-BOLD = "\033[1m"
 RESET = "\033[0m"
+
+# 预编译 ANSI escape 正则
+_ANSI_RE = re.compile(r"\033\[[0-9;]*m")
 
 NIMO_LOGO = [
     "███╗   ██╗██╗███╗   ███╗ ██████╗",
@@ -38,7 +39,7 @@ def _color_text(text: str, code: str) -> str:
 
 def _visible_width(text: str) -> int:
     """去除 ANSI escape code 后的可见字符数。"""
-    return len(re.sub(r"\033\[[0-9;]*m", "", text))
+    return len(_ANSI_RE.sub("", text))
 
 
 def _pad_visible(text: str, width: int, align: str = "left") -> str:
