@@ -1,12 +1,14 @@
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
 from nimo.main import build_agent
 
 
 def test_build_agent_loads_config():
-    with patch("nimo.main.load_config") as mock_load:
-        mock_load.return_value = MagicMock()
-        with patch("nimo.main.Agent") as mock_agent:
-            with patch("nimo.main.init_tapd"):
-                build_agent("config.yaml")
-                mock_load.assert_called_once_with("config.yaml")
-                mock_agent.assert_called_once()
+    mock_config = MagicMock()
+    with patch("nimo.main.Agent") as mock_agent:
+        with patch("nimo.main.init_tapd") as mock_init_tapd:
+            result = build_agent(mock_config)
+
+    mock_init_tapd.assert_called_once_with(mock_config)
+    mock_agent.assert_called_once_with(mock_config)
+    assert result is mock_agent.return_value

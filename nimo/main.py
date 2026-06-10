@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import os
-from nimo.config import load_config
+from nimo.config import Config, load_config
 from nimo.agent import Agent
 from nimo.welcome import print_welcome
 
@@ -12,7 +12,7 @@ from nimo.tools.tapd import init_tapd
 logger = logging.getLogger(__name__)
 
 
-def build_agent(config) -> Agent:
+def build_agent(config: Config) -> Agent:
     init_tapd(config)
     return Agent(config)
 
