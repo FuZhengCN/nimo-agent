@@ -33,22 +33,22 @@ class TestColorText:
 
 class TestBorderFunctions:
     def test_build_top_contains_version(self):
-        result = _build_top("0.1.0")
+        result = _build_top("0.1.0", 50, 37)
         assert "0.1.0" in result
         assert "╭" in result
         assert "┬" in result
         assert "╮" in result
 
-    def test_build_top_width_is_90(self):
-        result = _build_top("0.1.0")
-        assert _visible_width(result) == 90
+    def test_build_top_total_width(self):
+        result = _build_top("0.1.0", 50, 37)
+        assert _visible_width(result) == 90  # 50 + 37 + 3 borders
 
-    def test_build_bottom_width_is_90(self):
-        result = _build_bottom()
-        assert _visible_width(result) == 90
+    def test_build_bottom_total_width(self):
+        result = _build_bottom(50, 37)
+        assert _visible_width(result) == 90  # 50 + 37 + 3 borders
 
     def test_build_bottom_has_corners(self):
-        result = _build_bottom()
+        result = _build_bottom(50, 37)
         assert "╰" in result
         assert "┴" in result
         assert "╯" in result
