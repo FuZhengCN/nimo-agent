@@ -2,6 +2,7 @@
 
 import re
 import shutil
+import unicodedata
 
 # ANSI 颜色定义
 GRAY = "\033[90m"
@@ -21,10 +22,12 @@ NIMO_LOGO = [
 ]
 
 TIPS = [
-    "Type /help for commands",
-    "/exit to quit",
-    "Projects: \"show my projects\"",
-    "Log hours: \"help me log hours\"",
+    "/exit 退出",
+    "\"帮我看看有哪些项目\"",
+    "\"列出项目755的任务\"",
+    "\"创建一个需求：修复登录bug\"",
+    "\"给任务1001填4小时工时\"",
+    "\"当前有哪些活跃的迭代？\"",
 ]
 
 
@@ -41,14 +44,19 @@ def _color_text(text: str, code: str) -> str:
     return f"\033[{code}m{text}{RESET}"
 
 
-def _visible_width(text: str) -> int:
-    """去除 ANSI escape code 后的可见字符数。"""
-    return len(_ANSI_RE.sub("", text))
+def _display_width(text: str) -> int:
+    """计算字符串在终端中的显示列宽（ANSI 转义码不计，CJK 字符计 2 列）。"""
+    clean = _ANSI_RE.sub("", text)
+    w = 0
+    for ch in clean:
+        ea = unicodedata.east_asian_width(ch)
+        w += 2 if ea in ("W", "F") else 1
+    return w
 
 
 def _pad_visible(text: str, width: int, align: str = "left") -> str:
     """按可见宽度填充文本（ANSI 转义码不计入宽度）。"""
-    vis = _visible_width(text)
+    vis = _display_width(text)
     if vis >= width:
         return text
     pad = width - vis
@@ -105,6 +113,42 @@ def _build_right_panel(right_w: int) -> list[str]:
     for tip in TIPS:
         lines.append(_pad_visible(f"· {tip}", right_w, "left"))
     return lines
+
+
+def print_response_box(text: str) -> None:
+    """以卡片框输出 LLM 回复。"""
+    term_w = _get_term_width()
+    box_w = min(term_w - 4, 72)
+    inner_w = box_w - 2  # 左侧 2 格缩进
+
+    # 按换行拆分，超长行按显示宽度折行
+    raw_lines = text.split("\n")
+    lines = []
+    for para in raw_lines:
+        if para == "":
+            lines.append("")
+            continue
+        while _display_width(para) > inner_w:
+            # 从 para 中取出 display width <= inner_w 的前缀
+            cut = 0
+            cur_w = 0
+            for ch in para:
+                ch_w = 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
+                if cur_w + ch_w > inner_w:
+                    break
+                cur_w += ch_w
+                cut += 1
+            lines.append(para[:cut])
+            para = para[cut:]
+        lines.append(para)
+
+    top = f"{GRAY}╭─ Nimo {'─' * (box_w - 9)}╮{RESET}"
+    bottom = f"{GRAY}╰{'─' * (box_w - 2)}╯{RESET}"
+
+    print(top)
+    for line in lines:
+        print(f"  {line}")
+    print(bottom)
 
 
 def print_welcome(model: str, cwd: str, version: str) -> None:

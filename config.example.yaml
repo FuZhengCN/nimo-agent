@@ -2,7 +2,7 @@ llm:
   api_key: "sk-your-deepseek-key"
   base_url: "https://api.deepseek.com"
   model: "deepseek-chat"
-  max_tool_rounds: 5
+  max_tool_rounds: 10
   history_rounds: 10
 
 tapd:

@@ -26,8 +26,8 @@ async def test_full_flow_list_projects():
     # Mock LLM: tool call first, then final text
     mock_tool_call = MagicMock()
     mock_tool_call.id = "call_int_1"
-    mock_tool_call.function.name = "tapd_list_projects"
-    mock_tool_call.function.arguments = "{}"
+    mock_tool_call.function.name = "tapd_cli"
+    mock_tool_call.function.arguments = '{"args": ["workspace", "list"]}'
 
     call_count = [0]
 
@@ -83,8 +83,8 @@ async def test_full_flow_add_workhour():
 
     mock_tool_call = MagicMock()
     mock_tool_call.id = "call_int_2"
-    mock_tool_call.function.name = "tapd_add_workhour"
-    mock_tool_call.function.arguments = '{"workspace_id": 755, "entity_type": "story", "entity_id": 1001, "timespent": "2", "spentdate": "2026-06-10", "memo": "需求评审"}'
+    mock_tool_call.function.name = "tapd_cli"
+    mock_tool_call.function.arguments = '{"args": ["timesheet", "add", "--workspace-id", "755", "--entity-type", "story", "--entity-id", "1001", "--timespent", "2"]}'
 
     call_count = [0]
 

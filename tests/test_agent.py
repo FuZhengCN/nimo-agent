@@ -48,7 +48,7 @@ async def test_agent_calls_tool_then_responds(sample_config):
     # First call: LLM returns tool_call
     mock_tool_call = MagicMock()
     mock_tool_call.id = "call_001"
-    mock_tool_call.function.name = "tapd_list_projects"
+    mock_tool_call.function.name = "tapd_cli"
     mock_tool_call.function.arguments = "{}"
 
     # Second call: LLM returns text summary
@@ -78,7 +78,7 @@ async def test_agent_stops_at_max_rounds(sample_config):
 
     mock_tool_call = MagicMock()
     mock_tool_call.id = "call_001"
-    mock_tool_call.function.name = "tapd_list_projects"
+    mock_tool_call.function.name = "tapd_cli"
     mock_tool_call.function.arguments = "{}"
 
     agent._llm_client.chat = AsyncMock(
@@ -88,3 +88,44 @@ async def test_agent_stops_at_max_rounds(sample_config):
 
     response = await agent.run("反复查")
     assert agent._llm_client.chat.call_count == sample_config.llm.max_tool_rounds
+
+
+@pytest.mark.asyncio
+async def test_agent_handles_json_decode_error(sample_config):
+    from nimo.agent import Agent
+
+    agent = Agent(sample_config)
+
+    mock_tool_call = MagicMock()
+    mock_tool_call.id = "call_001"
+    mock_tool_call.function.name = "tapd_cli"
+    mock_tool_call.function.arguments = "not valid json"
+
+    agent._llm_client.chat = AsyncMock(
+        return_value=make_mock_chat_response(None, tool_calls=[mock_tool_call])
+    )
+
+    response = await agent.run("错误参数")
+    # JSON decode error should be caught and added to history, loop continues
+    # Max rounds reached since LLM keeps returning tool calls
+    assert "已达到最大工具调用轮数" in response
+
+
+def test_agent_system_prompt_fallback():
+    from nimo.agent import Agent
+    from nimo.config import Config, LLMConfig, TapdConfig
+    from unittest.mock import patch, mock_open
+
+    config = Config(
+        llm=LLMConfig(
+            api_key="sk-test", base_url="https://api.deepseek.com",
+            model="deepseek-chat", max_tool_rounds=5, history_rounds=10,
+        ),
+        tapd=TapdConfig(
+            api_base="https://api.tapd.cn", access_token="token",
+        ),
+    )
+    with patch("pathlib.Path.read_text", side_effect=FileNotFoundError):
+        agent = Agent(config)
+        assert "Nimo" in agent._system_prompt
+        assert "日常" in agent._system_prompt

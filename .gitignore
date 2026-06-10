@@ -7,3 +7,5 @@ venv/
 .pytest_cache/
 *.egg-info/
 dist/
+bin/tapd.exe
+.coverage

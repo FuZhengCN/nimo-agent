@@ -101,3 +101,45 @@ llm:
             load_config(tmp_path)
     finally:
         os.unlink(tmp_path)
+
+
+def test_missing_tapd_api_base_raises_error():
+    yaml_content = """
+llm:
+  api_key: "sk-test"
+  base_url: "https://api.deepseek.com"
+  model: "deepseek-chat"
+  max_tool_rounds: 5
+  history_rounds: 10
+tapd:
+  access_token: "token"
+"""
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        f.write(yaml_content)
+        tmp_path = f.name
+    try:
+        with pytest.raises(ConfigError, match="配置文件缺少必填字段：tapd.api_base"):
+            load_config(tmp_path)
+    finally:
+        os.unlink(tmp_path)
+
+
+def test_missing_tapd_access_token_raises_error():
+    yaml_content = """
+llm:
+  api_key: "sk-test"
+  base_url: "https://api.deepseek.com"
+  model: "deepseek-chat"
+  max_tool_rounds: 5
+  history_rounds: 10
+tapd:
+  api_base: "https://api.tapd.cn"
+"""
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        f.write(yaml_content)
+        tmp_path = f.name
+    try:
+        with pytest.raises(ConfigError, match="配置文件缺少必填字段：tapd.access_token"):
+            load_config(tmp_path)
+    finally:
+        os.unlink(tmp_path)

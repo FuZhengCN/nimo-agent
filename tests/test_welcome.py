@@ -1,6 +1,6 @@
 import io
 import sys
-from nimo.welcome import NIMO_LOGO, TIPS, _build_top, _build_bottom, _build_row, _color_text, _visible_width, print_welcome
+from nimo.welcome import NIMO_LOGO, TIPS, _build_top, _build_bottom, _build_row, _color_text, _display_width, print_welcome
 
 
 class TestConstants:
@@ -11,8 +11,8 @@ class TestConstants:
         for line in NIMO_LOGO:
             assert len(line.strip()) > 0
 
-    def test_tips_has_4_entries(self):
-        assert len(TIPS) == 4
+    def test_tips_has_entries(self):
+        assert len(TIPS) >= 4
 
     def test_tips_non_empty(self):
         for tip in TIPS:
@@ -41,11 +41,11 @@ class TestBorderFunctions:
 
     def test_build_top_total_width(self):
         result = _build_top("0.1.0", 50, 37)
-        assert _visible_width(result) == 90  # 50 + 37 + 3 borders
+        assert _display_width(result) == 90  # 50 + 37 + 3 borders
 
     def test_build_bottom_total_width(self):
         result = _build_bottom(50, 37)
-        assert _visible_width(result) == 90  # 50 + 37 + 3 borders
+        assert _display_width(result) == 90  # 50 + 37 + 3 borders
 
     def test_build_bottom_has_corners(self):
         result = _build_bottom(50, 37)
@@ -57,7 +57,7 @@ class TestBorderFunctions:
 class TestBuildRow:
     def test_build_row_width_is_90(self):
         result = _build_row("hello".ljust(50), "world".ljust(37))
-        assert _visible_width(result) == 90
+        assert _display_width(result) == 90
 
     def test_build_row_contains_separators(self):
         result = _build_row("left".ljust(50), "right".ljust(37))
