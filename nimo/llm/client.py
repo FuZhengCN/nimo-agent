@@ -2,6 +2,7 @@ import asyncio
 import logging
 from openai import (
     AsyncOpenAI,
+    APIConnectionError,
     RateLimitError,
     APITimeoutError,
     InternalServerError,
@@ -38,7 +39,7 @@ class LLMClient:
             full_messages.append({"role": "system", "content": system_prompt})
         full_messages.extend(messages)
 
-        RETRYABLE_ERRORS = (RateLimitError, APITimeoutError, InternalServerError)
+        RETRYABLE_ERRORS = (RateLimitError, APITimeoutError, InternalServerError, APIConnectionError)
 
         for attempt in range(self._max_attempts):
             try:

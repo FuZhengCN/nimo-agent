@@ -87,6 +87,9 @@ async def main() -> None:
         except KeyboardInterrupt:
             agent.save_history()
             print("\n已取消，输入 /exit 退出")
+        except Exception:
+            logging.getLogger(__name__).exception("未预期的错误")
+            print(f"\n\033[91m发生错误，请重试\033[0m")
 
 
 if __name__ == "__main__":
