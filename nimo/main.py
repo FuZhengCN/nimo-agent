@@ -49,12 +49,17 @@ async def main() -> None:
             agent.clear_history()
             print("历史已清除")
             continue
+        if user_input.strip() == "/clear-profile":
+            agent.clear_profile()
+            print("用户档案已清除")
+            continue
         if user_input.strip() == "/help":
             print("""
 可用命令：
-  /help     查看帮助
-  /clear    清除当前对话历史
-  /exit     退出程序
+  /help          查看帮助
+  /clear         清除当前对话历史
+  /clear-profile 清除长期用户档案
+  /exit          退出程序
 
 用法示例：
   · 帮我看看有哪些项目
@@ -71,8 +76,13 @@ async def main() -> None:
             print("\033[90m⏳ 思考中...\033[0m", end="\r")
             response = await agent.run(user_input)
             print(" " * 20, end="\r")
-            print_response_box(response)
-            agent.save_history()
+            usage = agent.last_usage
+            token_str = None
+            if usage:
+                def _fmt(n: int) -> str:
+                    return f"{n/1000:.1f}k" if n >= 1000 else str(n)
+                token_str = f"P:{_fmt(usage['prompt'])} C:{_fmt(usage['completion'])}"
+            print_response_box(response, token_summary=token_str)
             print()
         except KeyboardInterrupt:
             agent.save_history()

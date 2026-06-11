@@ -1,8 +1,14 @@
 """Nimo CLI 启动欢迎画面。"""
 
+import io
 import re
 import shutil
 import unicodedata
+
+from rich.console import Console
+from rich.markdown import Markdown
+from rich.style import Style
+from rich.theme import Theme
 
 # ANSI 颜色定义
 GRAY = "\033[90m"
@@ -24,6 +30,7 @@ NIMO_LOGO = [
 TIPS = [
     "/help 查看帮助与可用命令",
     "/clear 清除当前对话历史",
+    "/clear-profile 清除长期用户档案",
     "/exit 退出程序",
     "\"帮我看看有哪些项目\"",
     "\"创建一个需求：修复登录bug\"",
@@ -116,39 +123,37 @@ def _build_right_panel(right_w: int) -> list[str]:
     return lines
 
 
-def print_response_box(text: str) -> None:
+_CONTENT_THEME = Theme({
+    "markdown.h1": Style(bold=True),
+    "markdown.h2": Style(bold=True),
+    "markdown.h3": Style(bold=True),
+    "markdown.h4": Style(bold=True),
+    "markdown.h5": Style(bold=True),
+    "markdown.h6": Style(bold=True),
+    "markdown.code": Style(dim=True),
+    "markdown.code_block": Style(dim=True),
+    "markdown.table.header": Style(bold=True),
+    "markdown.table.border": Style(dim=True),
+    "markdown.item.bullet": Style(dim=True),
+    "markdown.block_quote": Style(dim=True),
+})
+
+
+def print_response_box(text: str, token_summary: str | None = None) -> None:
     """以 rich Markdown 渲染 LLM 回复，仅上下边框。"""
-    import io
-    from rich.console import Console
-    from rich.markdown import Markdown
-    from rich.style import Style
-    from rich.theme import Theme
-
-    _content_theme = Theme({
-        "markdown.h1": Style(bold=True),
-        "markdown.h2": Style(bold=True),
-        "markdown.h3": Style(bold=True),
-        "markdown.h4": Style(bold=True),
-        "markdown.h5": Style(bold=True),
-        "markdown.h6": Style(bold=True),
-        "markdown.code": Style(dim=True),
-        "markdown.code_block": Style(dim=True),
-        "markdown.table.header": Style(bold=True),
-        "markdown.table.border": Style(dim=True),
-        "markdown.item.bullet": Style(dim=True),
-        "markdown.block_quote": Style(dim=True),
-    })
-
     term_w = _get_term_width()
     box_w = term_w - 4
 
     buf = io.StringIO()
-    console = Console(file=buf, width=box_w - 2, force_terminal=True, theme=_content_theme)
-    console.print(Markdown(text))
+    Console(file=buf, width=box_w - 2, force_terminal=True, theme=_CONTENT_THEME).print(Markdown(text))
     rendered = buf.getvalue().rstrip("\n")
 
     top = f"{CYAN}╭─ Nimo {'─' * (box_w - 9)}╮{RESET}"
-    bottom = f"{CYAN}╰{'─' * (box_w - 2)}╯{RESET}"
+    if token_summary:
+        dash_count = max(0, box_w - 4 - len(token_summary))
+        bottom = f"{CYAN}╰{'─' * dash_count} {GRAY}{token_summary}{CYAN} ╯{RESET}"
+    else:
+        bottom = f"{CYAN}╰{'─' * (box_w - 2)}╯{RESET}"
 
     print(top)
     for line in rendered.split("\n"):

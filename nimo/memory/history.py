@@ -29,6 +29,9 @@ class ConversationHistory:
         result.extend(self._messages)
         return result
 
+    def get_trimmed(self) -> list[dict]:
+        return list(self._trimmed_buffer)
+
     def pop_trimmed(self) -> list[dict]:
         msgs = self._trimmed_buffer
         self._trimmed_buffer = []
@@ -71,17 +74,20 @@ class ConversationHistory:
         history._messages = data.get("messages", [])
         history._user_indices = data.get("user_indices", [])
         history._summary = data.get("summary")
+        history._trim()
         return history
 
     def save(self, base_dir: str | Path | None = None) -> None:
         base = Path(base_dir) if base_dir else Path.home() / ".nimo" / "sessions"
         base.mkdir(parents=True, exist_ok=True)
         path = base / f"{self._session_id}.json"
+        tmp = path.with_suffix(".tmp")
         try:
-            path.write_text(
+            tmp.write_text(
                 json.dumps(self.to_dict(), ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
+            tmp.replace(path)
         except OSError as e:
             logger.warning("保存历史失败：%s", e)
 

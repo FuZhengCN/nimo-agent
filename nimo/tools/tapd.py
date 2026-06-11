@@ -29,7 +29,9 @@ def _validate_args(args: list[str]) -> str | None:
     if cmd not in _ALLOWED_COMMANDS:
         return f"不允许的子命令：{cmd}"
     for arg in args:
-        if arg.startswith("..") or "/.." in arg:
+        # 使用 normpath 规范化后检查路径遍历
+        normalized = os.path.normpath(arg)
+        if normalized != arg and (normalized.startswith("..") or os.path.isabs(normalized)):
             return f"参数包含路径遍历：{arg}"
     return None
 
@@ -57,6 +59,8 @@ async def init_tapd(config: Config) -> None:
 async def tapd_cli(args: list[str]) -> ToolResult:
     if error := _validate_args(args):
         return ToolResult(success=False, error=error)
+    if _config is None:
+        return ToolResult(success=False, error="TAPD 配置未初始化，请检查 config.yaml")
     try:
         env = os.environ.copy()
         env["TAPD_ACCESS_TOKEN"] = _config.tapd.access_token
@@ -72,9 +76,9 @@ async def tapd_cli(args: list[str]) -> ToolResult:
         stdout, stderr = await proc.communicate()
 
         if proc.returncode != 0:
-            err_msg = (stderr.decode() or stdout.decode()).strip()
+            err_msg = (stderr.decode(errors="replace") or stdout.decode(errors="replace")).strip()
             return ToolResult(success=False, error=err_msg or f"tapd CLI 返回非零退出码 {proc.returncode}")
-        return ToolResult(success=True, data=stdout.decode().strip())
+        return ToolResult(success=True, data=stdout.decode(errors="replace").strip())
     except FileNotFoundError:
         return ToolResult(success=False, error="tapd CLI 未找到，请将 tapd.exe 放到项目 bin/ 目录")
     except Exception as e:

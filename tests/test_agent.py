@@ -76,18 +76,46 @@ async def test_agent_stops_at_max_rounds(sample_config):
 
     agent = Agent(sample_config)
 
-    mock_tool_call = MagicMock()
-    mock_tool_call.id = "call_001"
-    mock_tool_call.function.name = "tapd_cli"
-    mock_tool_call.function.arguments = "{}"
+    # 每次返回不同参数，避免触发循环检测
+    def make_tc(i: int):
+        tc = MagicMock()
+        tc.id = f"call_{i:03d}"
+        tc.function.name = "tapd_cli"
+        tc.function.arguments = f'{{"round": {i}}}'
+        return tc
 
-    agent._llm_client.chat = AsyncMock(
-        return_value=make_mock_chat_response(None, tool_calls=[mock_tool_call])
-    )
+    responses = [
+        make_mock_chat_response(None, tool_calls=[make_tc(i)])
+        for i in range(sample_config.llm.max_tool_rounds)
+    ]
+    agent._llm_client.chat = AsyncMock(side_effect=responses)
     agent._registry.execute = AsyncMock(return_value=MagicMock(success=True, data=[]))
 
     response = await agent.run("反复查")
     assert agent._llm_client.chat.call_count == sample_config.llm.max_tool_rounds
+
+
+@pytest.mark.asyncio
+async def test_agent_loop_detection_stops_early(sample_config):
+    from nimo.agent import Agent
+
+    agent = Agent(sample_config)
+    agent._registry.execute = AsyncMock(return_value=MagicMock(success=True, data=[]))
+
+    # 每次都返回完全相同的 tool call，应触发循环检测
+    tc = MagicMock()
+    tc.id = "call_001"
+    tc.function.name = "tapd_cli"
+    tc.function.arguments = '{"workspace_id": "755"}'
+
+    agent._llm_client.chat = AsyncMock(
+        return_value=make_mock_chat_response(None, tool_calls=[tc])
+    )
+
+    response = await agent.run("反复查同一个东西")
+    assert "重复工具调用" in response
+    # 循环检测在第 3 次调用后触发（LLM 调用 3 次，每轮 1 次）
+    assert agent._llm_client.chat.call_count == 3
 
 
 @pytest.mark.asyncio
@@ -96,18 +124,21 @@ async def test_agent_handles_json_decode_error(sample_config):
 
     agent = Agent(sample_config)
 
-    mock_tool_call = MagicMock()
-    mock_tool_call.id = "call_001"
-    mock_tool_call.function.name = "tapd_cli"
-    mock_tool_call.function.arguments = "not valid json"
+    # 每次返回不同参数，避免触发循环检测
+    def make_tc(i: int):
+        tc = MagicMock()
+        tc.id = f"call_{i:03d}"
+        tc.function.name = "tapd_cli"
+        tc.function.arguments = f"not valid json {i}"
+        return tc
 
-    agent._llm_client.chat = AsyncMock(
-        return_value=make_mock_chat_response(None, tool_calls=[mock_tool_call])
-    )
+    responses = [
+        make_mock_chat_response(None, tool_calls=[make_tc(i)])
+        for i in range(sample_config.llm.max_tool_rounds)
+    ]
+    agent._llm_client.chat = AsyncMock(side_effect=responses)
 
     response = await agent.run("错误参数")
-    # JSON decode error should be caught and added to history, loop continues
-    # Max rounds reached since LLM keeps returning tool calls
     assert "已达到最大工具调用轮数" in response
 
 
@@ -278,6 +309,7 @@ async def test_agent_extracts_profile_on_trim(sample_config):
 
     sample_config.llm.profile_extract = True
     agent = Agent(sample_config)
+    agent._profile.clear()  # 清除磁盘残留数据，保证测试隔离
     agent._history._max_rounds = 1
 
     agent._history.add({"role": "user", "content": "我叫张三"})
@@ -332,7 +364,7 @@ def test_agent_injects_profile_in_run(sample_config):
     assert "[用户信息]" in agent._profile.to_context()
 
 
-def test_clear_history_also_clears_profile(sample_config):
+def test_clear_history_does_not_clear_profile(sample_config):
     from nimo.agent import Agent
 
     sample_config.llm.profile_extract = True
@@ -342,7 +374,7 @@ def test_clear_history_also_clears_profile(sample_config):
 
     agent.clear_history()
     assert agent._history._messages == []
-    assert agent._profile.is_empty
+    assert agent._profile.facts == {"姓名": "张三"}
 
 
 def test_agent_empty_profile_context_not_injected(sample_config):

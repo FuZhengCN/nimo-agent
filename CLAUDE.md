@@ -47,16 +47,17 @@ main.py → agent.py → llm/client.py
 ### Agent 核心循环
 
 ```
-用户输入 → 加入历史 → 检查 trim buffer（有则调 LLM 摘要压缩）
+用户输入 → 加入历史 → trim buffer（有则调 LLM 摘要压缩 + 提取 Profile）
   ↓
 ┌─ for round in 1..max_tool_rounds:
 │   LLM.chat(messages, tools, system_prompt)
-│   ├─ 无 tool_calls → 返回文本，结束
-│   └─ 有 tool_calls → 执行工具，结果加入历史，继续循环
+│   ├─ 无 tool_calls → 压缩工具结果，返回文本
+│   └─ 有 tool_calls → 循环检测(3次相同停止) → asyncio.gather 并行执行
+│                     → 结果截断(>4000字符)加入历史 → 继续循环
 └─ 超限 → 返回错误提示
 ```
 
-运行时：`agent.run()` 前显示灰色 `⏳ 思考中...` 提示，完成后清除。回复通过 `rich.Markdown` 渲染（内容区零额外颜色，仅粗体/暗色做字形区分），外框仅上下两条品牌蓝青色边框（`print_response_box()`）。输入提示符 `❯` 和键入文字为暖橙色（RGB 242,138,56）。HTTP 请求日志（httpx/openai）已静默到 WARNING 级别，Pydantic V1 兼容警告已屏蔽。
+运行时回复通过 `rich.Markdown` 渲染，底边框显示 `P:X C:Y` token 消耗（prompt/completion 分列）。工具返回的原始 JSON 在 LLM 给出最终回复后被 `_compact_tool_results()` 替换为短摘要（`[tapd_cli 返回 X 字符]`），避免后续轮次携带已消化的冗余数据。
 
 **内置命令**（`main.py` 输入循环中直接处理，不走 Agent）：
 
@@ -64,6 +65,7 @@ main.py → agent.py → llm/client.py
 |------|------|
 | `/help` | 显示可用命令与用法示例 |
 | `/clear` | 调用 `agent.clear_history()` 清空内存消息并删除持久化文件 |
+| `/clear-profile` | 调用 `agent.clear_profile()` 清空长期用户档案 |
 | `/exit` | 调用 `agent.save_history()` 落盘后退出 |
 
 ### 工具注册系统
@@ -74,7 +76,7 @@ main.py → agent.py → llm/client.py
 
 ### System Prompt
 
-`nimo/prompts/system.md` 定义 LLM 的行为准则和 `tapd_cli` 命令参考。`Agent._load_system_prompt()` 通过 `Path(__file__)` 定位文件（非硬编码相对路径），读取后作为 system message 传入每次 LLM 调用。
+`nimo/prompts/system.md` 定义 LLM 的行为准则和回复格式（已精简至 ~1100 字符，包含反重复查询规则）。`Agent._load_system_prompt()` 通过 `Path(__file__)` 定位文件，读取后作为 system message 传入每次 LLM 调用。
 
 ### 外部二进制
 
@@ -84,14 +86,14 @@ main.py → agent.py → llm/client.py
 
 | 模块 | 关键设计 |
 |------|---------|
-| `agent.py` | `Agent.run()` 编排循环；`_maybe_summarize_trimmed()` 在历史超窗时调 LLM 生成摘要（`_build_summary_prompt()` 构建请求，`SUMMARY_SYSTEM_PROMPT` 控制摘要风格）；`save_history()`/`clear_history()` 管理持久化 |
+| `agent.py` | `Agent.run()` 编排循环：LLM 调用捕获 `LLMError` 防崩溃、`asyncio.gather` 并行执行工具 + 120s 超时 + 结果超 4000 字符截断、连续 3 次相同调用自动终止、LLM 回复后 `_compact_tool_results()` 压缩原始 JSON 为摘要；`_trimmed_llm_call()` 复用；Profile 上下文循环外注入；`last_usage` 属性暴露 token 统计 |
 | `llm/client.py` | `LLMClient.chat()` 封装 DeepSeek（兼容 OpenAI SDK），4次尝试（1+3重试），仅对 RateLimitError/APITimeoutError/InternalServerError 重试 |
-| `memory/history.py` | `ConversationHistory` 滑动窗口截断 + `_trimmed_buffer` 暂存被 trim 消息 + `pop_trimmed()`/`set_summary()` 供 Agent 调度摘要压缩 + `to_dict()`/`from_dict()`/`save()`/`load()` JSON 文件持久化（`~/.nimo/sessions/`） |
+| `memory/history.py` | `ConversationHistory` 滑动窗口截断 + `_trimmed_buffer` 暂存被 trim 消息 + `get_trimmed()`/`pop_trimmed()` 分离 peek/pop 语义；`from_dict()` 恢复后自动 `_trim()` 确保加载即裁剪；`save()` 原子写入（.tmp → .json 防损坏）；JSON 文件持久化（`~/.nimo/sessions/`） |
 | `memory/profile.py` | `UserProfile` 结构化长期记忆（`dict[str,str]` 键值对），独立于滑动窗口，`~/.nimo/profile.json` 持久化；Agent 在 trim 时调 LLM 提取事实（`_maybe_extract_profile()`），注入到每条消息头部 `[用户信息]` |
 | `tools/registry.py` | `ToolRegistry` 单例 + `@register_tool` 装饰器；`reset()` 用于测试隔离 |
 | `tools/tapd.py` | `init_tapd()` 存储配置；唯一工具 `tapd_cli` 调用外部 `tapd.exe` 二进制；`_validate_args()` 子命令白名单 + 路径遍历校验防止 prompt 注入 |
 | `config.py` | `load_config()` 加载 YAML + `_env_override()` 环境变量覆盖（`LLM_API_KEY`、`TAPD_ACCESS_TOKEN`） |
-| `welcome.py` | `print_welcome(model, cwd, version)` 启动欢迎画面（24bit ANSI 真彩色，6:4 双栏）；`print_response_box()` 用 `rich.Markdown` + 自定义无色 Theme 渲染回复，仅上下品牌色边框 |
+| `welcome.py` | `print_welcome(model, cwd, version)` 启动欢迎画面（24bit ANSI 真彩色，6:4 双栏）；`print_response_box(text, token_summary)` 用 `rich.Markdown` + 无色 Theme 渲染回复，仅上下品牌色边框，token 显示在底边框右侧（`P:X C:Y` 格式）；Theme 模块级常量避免每次重建 |
 
 ### 配置
 

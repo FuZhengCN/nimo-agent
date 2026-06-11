@@ -1,8 +1,9 @@
+import asyncio
 import json
 import logging
 from pathlib import Path
 from nimo.config import Config
-from nimo.llm.client import LLMClient
+from nimo.llm.client import LLMClient, LLMError
 from nimo.memory.history import ConversationHistory
 from nimo.memory.profile import UserProfile
 from nimo.tools.registry import ToolRegistry
@@ -34,16 +35,28 @@ class Agent:
         self._llm_client = LLMClient(config)
         self._registry = ToolRegistry.get_instance()
         self._system_prompt = self._load_system_prompt()
+        self._tool_definitions = self._registry.build_tool_definitions()
         if config.llm.history_persist:
-            self._history = ConversationHistory.load(
-                max_rounds=config.llm.history_rounds,
-            )
+            try:
+                self._history = ConversationHistory.load(
+                    max_rounds=config.llm.history_rounds,
+                )
+            except Exception:
+                logger.warning("历史加载失败，使用空历史", exc_info=True)
+                self._history = ConversationHistory(max_rounds=config.llm.history_rounds)
         else:
             self._history = ConversationHistory(max_rounds=config.llm.history_rounds)
         if config.llm.profile_extract:
-            self._profile = UserProfile.load()
+            try:
+                self._profile = UserProfile.load()
+            except Exception:
+                logger.warning("档案加载失败，使用空档案", exc_info=True)
+                self._profile = UserProfile()
         else:
             self._profile = UserProfile()
+
+        self._recent_calls: list[tuple[str, str]] = []
+        self._last_usage: dict[str, int] | None = None
 
     def _load_system_prompt(self) -> str:
         prompt_path = Path(__file__).resolve().parent / "prompts" / "system.md"
@@ -53,20 +66,21 @@ class Agent:
             logger.warning("system.md 未找到，使用默认提示")
             return "你是 Nimo，一个帮助用户完成日常工作的助手。"
 
+    async def _trimmed_llm_call(self, trimmed: list[dict], system_prompt: str, existing_summary: str | None = None) -> str:
+        """调 LLM 处理 trimmed 消息，返回响应文本。"""
+        prompt = _build_summary_prompt(trimmed, existing_summary)
+        response = await self._llm_client.chat(
+            messages=[{"role": "user", "content": prompt}],
+            tools=[],
+            system_prompt=system_prompt,
+        )
+        return (response.choices[0].message.content or "").strip()
+
     async def _maybe_summarize_trimmed(self, trimmed: list[dict]) -> None:
-        if not trimmed:
-            return
-        if not self._config.llm.history_summarize:
+        if not trimmed or not self._config.llm.history_summarize:
             return
         try:
-            existing = self._history.summary
-            prompt = _build_summary_prompt(trimmed, existing)
-            response = await self._llm_client.chat(
-                messages=[{"role": "user", "content": prompt}],
-                tools=[],
-                system_prompt=SUMMARY_SYSTEM_PROMPT,
-            )
-            text = (response.choices[0].message.content or "").strip()
+            text = await self._trimmed_llm_call(trimmed, SUMMARY_SYSTEM_PROMPT, self._history.summary)
             if text:
                 self._history.set_summary(text)
         except Exception:
@@ -76,13 +90,7 @@ class Agent:
         if not trimmed or not self._config.llm.profile_extract:
             return
         try:
-            prompt = _build_summary_prompt(trimmed, None)
-            response = await self._llm_client.chat(
-                messages=[{"role": "user", "content": prompt}],
-                tools=[],
-                system_prompt=PROFILE_EXTRACT_PROMPT,
-            )
-            text = (response.choices[0].message.content or "").strip()
+            text = await self._trimmed_llm_call(trimmed, PROFILE_EXTRACT_PROMPT)
             if text and text != "{}":
                 facts = json.loads(text)
                 if isinstance(facts, dict) and facts:
@@ -99,37 +107,58 @@ class Agent:
 
     def clear_history(self) -> None:
         self._history.clear()
+
+    def clear_profile(self) -> None:
         self._profile.clear()
+
+    @property
+    def last_usage(self) -> dict[str, int] | None:
+        return self._last_usage
 
     async def run(self, user_input: str) -> str:
         self._history.add({"role": "user", "content": user_input})
-        trimmed = self._history.pop_trimmed()
+        trimmed = self._history.get_trimmed()
         await self._maybe_summarize_trimmed(trimmed)
         await self._maybe_extract_profile(trimmed)
-
-        tools = self._registry.build_tool_definitions()
+        self._history.pop_trimmed()
 
         max_rounds = self._config.llm.max_tool_rounds
+        ctx = self._profile.to_context()
+        self._recent_calls.clear()
+        usage = {"prompt": 0, "completion": 0}
+
+        # 记录本轮起始位置，用于最终的 tool 结果压缩
+        msg_start_idx = len(self._history._messages)
 
         for _ in range(max_rounds):
             messages = self._history.get_messages()
-            ctx = self._profile.to_context()
             if ctx:
                 messages.insert(0, {"role": "system", "content": ctx})
-            response = await self._llm_client.chat(
-                messages=messages,
-                tools=tools,
-                system_prompt=self._system_prompt,
-            )
+            try:
+                response = await self._llm_client.chat(
+                    messages=messages,
+                    tools=self._tool_definitions,
+                    system_prompt=self._system_prompt,
+                )
+            except LLMError as e:
+                msg = f"LLM 调用失败：{e}"
+                self._history.add({"role": "assistant", "content": msg})
+                return msg
+
+            if response.usage:
+                usage["prompt"] += response.usage.prompt_tokens
+                usage["completion"] += response.usage.completion_tokens
 
             choice = response.choices[0]
             message = choice.message
 
             if not message.tool_calls:
                 self._history.add({"role": "assistant", "content": message.content or ""})
+                self._last_usage = usage
+                self._compact_tool_results(msg_start_idx)
                 return message.content or ""
 
-            # 有工具调用
+            # 有工具调用：记录到历史
             self._history.add({
                 "role": "assistant",
                 "content": message.content,
@@ -146,30 +175,107 @@ class Agent:
                 ],
             })
 
+            # 循环检测：连续 3 次相同调用则终止
             for tc in message.tool_calls:
-                try:
-                    args = json.loads(tc.function.arguments)
-                except json.JSONDecodeError as e:
-                    self._history.add({
-                        "role": "tool",
-                        "tool_call_id": tc.id,
-                        "content": json.dumps({
-                            "success": False,
-                            "data": None,
-                            "error": f"工具参数 JSON 解析失败：{e}",
-                        }, ensure_ascii=False),
-                    })
-                    continue
+                call_key = (tc.function.name, tc.function.arguments)
+                self._recent_calls.append(call_key)
+            if len(self._recent_calls) >= 3:
+                last3 = self._recent_calls[-3:]
+                if last3[0] == last3[1] == last3[2]:
+                    msg = "检测到重复工具调用，已自动终止。请换个方式描述你的需求。"
+                    self._history.add({"role": "assistant", "content": msg})
+                    self._last_usage = usage
+                    self._compact_tool_results(msg_start_idx)
+                    return msg
 
-                result = await self._registry.execute(tc.function.name, args)
+            # 并行执行所有工具调用
+            results = await self._execute_tool_calls(message.tool_calls)
+            for tc_id, content in results:
                 self._history.add({
                     "role": "tool",
-                    "tool_call_id": tc.id,
-                    "content": json.dumps({
-                        "success": result.success,
-                        "data": result.data,
-                        "error": result.error,
-                    }, ensure_ascii=False, default=str),
+                    "tool_call_id": tc_id,
+                    "content": content,
                 })
 
+        self._last_usage = usage
+        self._compact_tool_results(msg_start_idx)
         return "已达到最大工具调用轮数，操作未完成。"
+
+    def _compact_tool_results(self, start_idx: int) -> None:
+        """将本轮工具结果替换为紧凑摘要，LLM 已消化数据后不再保留原始 JSON。"""
+        for i in range(start_idx, len(self._history._messages)):
+            msg = self._history._messages[i]
+            if msg["role"] != "tool":
+                continue
+            try:
+                data = json.loads(msg["content"])
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if not data.get("success"):
+                # 失败：保留错误信息
+                msg["content"] = json.dumps({
+                    "success": False, "error": data.get("error", "未知错误"),
+                }, ensure_ascii=False)
+                continue
+            raw = data.get("data", "")
+            if isinstance(raw, str) and len(raw) > 200:
+                summary = f"[tapd_cli 返回 {len(raw)} 字符]"
+            elif isinstance(raw, list):
+                summary = f"[tapd_cli 返回 {len(raw)} 条记录]"
+            elif isinstance(raw, dict):
+                summary = f"[tapd_cli 返回 {len(raw)} 个字段]"
+            else:
+                summary = "[tapd_cli 执行成功]"
+            msg["content"] = json.dumps({
+                "success": True, "summary": summary,
+            }, ensure_ascii=False)
+
+    async def _execute_tool_calls(self, tool_calls: list) -> list[tuple[str, str]]:
+        """并行执行工具调用，返回 [(tool_call_id, content), ...]，保持原始顺序。"""
+        # 先解析所有参数
+        parsed: list[tuple[str, str | None, dict | None, str | None]] = []
+        for tc in tool_calls:
+            try:
+                args = json.loads(tc.function.arguments)
+                parsed.append((tc.id, tc.function.name, args, None))
+            except json.JSONDecodeError as e:
+                parsed.append((tc.id, tc.function.name, None, str(e)))
+
+        # 并行执行所有有效调用
+        async def _run_one(tc_id: str, name: str, args: dict) -> tuple[str, str]:
+            try:
+                result = await asyncio.wait_for(
+                    self._registry.execute(name, args),
+                    timeout=120,
+                )
+            except asyncio.TimeoutError:
+                return tc_id, json.dumps({
+                    "success": False, "data": None, "error": "工具执行超时（120s）",
+                }, ensure_ascii=False)
+            content = json.dumps({
+                "success": result.success,
+                "data": result.data,
+                "error": result.error,
+            }, ensure_ascii=False, default=str)
+            if len(content) > 4000:
+                content = content[:4000] + "...[结果过长已截断]"
+            return tc_id, content
+
+        tasks = [
+            _run_one(tc_id, name, args)
+            for tc_id, name, args, err in parsed if err is None
+        ]
+        gathered = await asyncio.gather(*tasks) if tasks else []
+
+        # 重建结果列表，保持原始顺序
+        result_map = dict(gathered)
+        results: list[tuple[str, str]] = []
+        for tc_id, name, args, err in parsed:
+            if err:
+                results.append((tc_id, json.dumps({
+                    "success": False, "data": None,
+                    "error": f"工具参数 JSON 解析失败：{err}",
+                }, ensure_ascii=False)))
+            else:
+                results.append((tc_id, result_map[tc_id]))
+        return results
