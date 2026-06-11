@@ -1,6 +1,6 @@
 # 工具系统可扩展性改造
 
-**日期**: 2026-06-11 | **状态**: 设计中
+**日期**: 2026-06-11 | **状态**: 已确认
 
 ## 背景
 
@@ -14,13 +14,21 @@
 
 **问题**: 成功摘要字符串硬编码 `tapd_cli`，加新工具后所有摘要都标成 `tapd_cli`。
 
-**改法**: 在 `_compact_tool_results()` 中从同轮次 assistant 消息的 `tool_calls` 提取 `tool_call_id → function.name` 映射，摘要字符串使用动态工具名。
+**改法**: 在 `_compact_tool_results()` 中，遍历 `start_idx` 之后的消息，从 assistant 消息的 `tool_calls` 提取 `tool_call_id → function.name` 映射；处理 tool 消息时用 `msg["tool_call_id"]` 查表获取工具名。
 
 ```python
 # 改前
 summary = f"[tapd_cli 返回 {len(raw)} 字符]"
 
-# 改后
+# 改后：先遍历收集 name_map
+name_map: dict[str, str] = {}
+for i in range(start_idx, len(self._history._messages)):
+    m = self._history._messages[i]
+    if m["role"] == "assistant" and m.get("tool_calls"):
+        for tc in m["tool_calls"]:
+            name_map[tc["id"]] = tc["function"]["name"]
+
+# 再压缩工具结果时使用动态名
 tool_name = name_map.get(msg.get("tool_call_id", ""), "未知工具")
 summary = f"[{tool_name} 返回 {len(raw)} 字符]"
 ```
@@ -33,7 +41,7 @@ summary = f"[{tool_name} 返回 {len(raw)} 字符]"
 
 **改法**: `__init__.py` 中用 `pkgutil.iter_modules` 扫描并 import 所有不以 `_` 开头的模块。`main.py` 删除显式 import。
 
-约定：工具模块名不以 `_` 开头，非工具模块（`registry`）跳过。
+约定：工具模块名不以 `_` 开头，非工具模块（`registry`）跳过。import 失败时 log warning 并继续，不允许单个工具模块的错误阻止启动。
 
 ### 3. 通用工具初始化
 
@@ -41,7 +49,7 @@ summary = f"[{tool_name} 返回 {len(raw)} 字符]"
 
 **问题**: `build_agent()` 直接调用 `init_tapd(config)`，加新工具需要在此处新增 init 调用。
 
-**改法**: `ToolRegistry` 新增 `register_init()` + `init_all()`。工具模块的 init 函数通过 `register_init` 注册，`build_agent()` 改为调用 `ToolRegistry.get_instance().init_all(config)`。
+**改法**: `ToolRegistry` 新增 `register_init()` + `init_all()`。工具模块的 init 函数通过 `register_init` 注册，`build_agent()` 改为调用 `ToolRegistry.get_instance().init_all(config)`。`init_all` 中单个 init 失败时 log warning 并继续，不阻塞其他工具初始化。
 
 ### 4. system prompt 动态工具列表
 
