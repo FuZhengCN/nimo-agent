@@ -82,7 +82,7 @@ main.py → agent.py → llm/client.py      (DeepSeek API)
                    → memory/history.py   (对话历史滑动窗口)
                    → tools/registry.py   (工具注册与分发)
         → config.py
-        → welcome.py
+        → display.py
         → tools/tapd.py                  (tapd CLI 工具)
 ```
 

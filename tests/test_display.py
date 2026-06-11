@@ -1,6 +1,6 @@
 import io
 import sys
-from nimo.welcome import NIMO_LOGO, TIPS, _build_top, _build_bottom, _build_row, _color_text, _display_width, print_welcome
+from nimo.display import NIMO_LOGO, TIPS, _build_top, _build_bottom, _build_row, _color_text, _display_width, print_welcome
 
 
 class TestConstants:

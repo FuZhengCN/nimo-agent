@@ -26,7 +26,7 @@ pytest tests/ -v
 pytest tests/ --cov=nimo --cov-report=term-missing
 
 # 单个测试文件
-pytest tests/test_welcome.py -v
+pytest tests/test_display.py -v
 pytest tests/test_agent.py -v
 
 # 单个测试用例
@@ -42,7 +42,7 @@ main.py → agent.py → llm/client.py
                    → memory/history.py
                    → tools/registry.py
         → config.py
-        → welcome.py
+        → display.py
         → tools/__init__.py (pkgutil 自动发现工具模块)
             → tools/tapd.py (@register_tool 注册)
 ```
@@ -101,7 +101,7 @@ main.py → agent.py → llm/client.py
 | `tools/registry.py` | `ToolRegistry` 单例 + `@register_tool` 装饰器 + `register_init()`/`init_all()` 通用初始化机制；`reset()` 用于测试隔离 |
 | `tools/tapd.py` | `init_tapd()` 存储配置；唯一工具 `tapd_cli` 调用外部 `tapd.exe` 二进制；`_validate_args()` 子命令白名单 + 路径遍历校验防止 prompt 注入 |
 | `config.py` | `load_config()` 加载 YAML + `_env_override()` 环境变量覆盖（`LLM_API_KEY`、`TAPD_ACCESS_TOKEN`） |
-| `welcome.py` | `print_welcome(model, cwd, version)` 启动欢迎画面（24bit ANSI 真彩色，6:4 双栏）；`print_response_box(text, token_summary)` 用 `rich.Markdown` + 无色 Theme 渲染回复，仅上下品牌色边框，token 显示在底边框右侧（`P:X C:Y` 格式）；Theme 模块级常量避免每次重建 |
+| `display.py` | `print_welcome(model, cwd, version)` 启动欢迎画面（24bit ANSI 真彩色，6:4 双栏）；`print_response_box(text, token_summary)` 用 `rich.Markdown` + 无色 Theme 渲染回复，仅上下品牌色边框，token 显示在底边框右侧（`P:X C:Y` 格式）；Theme 模块级常量避免每次重建 |
 
 ### 配置
 
@@ -130,4 +130,4 @@ tapd:
 - **Agent 循环**通过 mock `LLMClient.chat` 和 `ToolRegistry.execute` 测试，覆盖正常路径及 JSON 解析失败、系统提示文件缺失等错误路径
 - **单例 Registry**测试通过 `reset()` 保证隔离
 - **TAPD 工具测试**在模块级 import（`@register_tool` 只触发一次），mock `asyncio.create_subprocess_exec` 验证 CLI 调用；`_validate_args()` 校验逻辑单独测试
-- **Welcome 模块**测试覆盖常量、ANSI 颜色、边框宽度、行构建、`print_welcome` 端到端输出；`sys.stdout` 操作用 `try/finally` 保护
+- **Display 模块**测试覆盖常量、ANSI 颜色、边框宽度、行构建、`print_welcome` 端到端输出；`sys.stdout` 操作用 `try/finally` 保护
