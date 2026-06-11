@@ -26,6 +26,7 @@ class ToolRegistry:
 
     def __init__(self):
         self._tools: dict[str, _ToolDef] = {}
+        self._initializers: list[Callable[..., Awaitable[None]]] = []
 
     @classmethod
     def get_instance(cls) -> "ToolRegistry":
@@ -50,6 +51,16 @@ class ToolRegistry:
             parameters=parameters,
             func=func,
         )
+
+    def register_init(self, func: Callable[..., Awaitable[None]]) -> None:
+        self._initializers.append(func)
+
+    async def init_all(self, config) -> None:
+        for init_fn in self._initializers:
+            try:
+                await init_fn(config)
+            except Exception:
+                logger.warning("工具初始化 %s 失败，跳过", getattr(init_fn, "__name__", init_fn), exc_info=True)
 
     def build_tool_definitions(self) -> list[dict]:
         return [

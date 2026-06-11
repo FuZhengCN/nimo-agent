@@ -61,10 +61,17 @@ class Agent:
     def _load_system_prompt(self) -> str:
         prompt_path = Path(__file__).resolve().parent / "prompts" / "system.md"
         try:
-            return prompt_path.read_text(encoding="utf-8")
+            base = prompt_path.read_text(encoding="utf-8")
         except FileNotFoundError:
             logger.warning("system.md 未找到，使用默认提示")
             return "你是 Nimo，一个帮助用户完成日常工作的助手。"
+        # 动态追加可用工具列表
+        tool_lines = []
+        for t in self._registry._tools.values():
+            tool_lines.append(f"- `{t.name}`：{t.description}")
+        if tool_lines:
+            base += "\n\n## 可用工具\n" + "\n".join(tool_lines)
+        return base
 
     async def _trimmed_llm_call(self, trimmed: list[dict], system_prompt: str, existing_summary: str | None = None) -> str:
         """调 LLM 处理 trimmed 消息，返回响应文本。"""
@@ -203,6 +210,14 @@ class Agent:
 
     def _compact_tool_results(self, start_idx: int) -> None:
         """将本轮工具结果替换为紧凑摘要，LLM 已消化数据后不再保留原始 JSON。"""
+        # 第一遍：收集 tool_call_id → 工具名 映射
+        name_map: dict[str, str] = {}
+        for i in range(start_idx, len(self._history._messages)):
+            m = self._history._messages[i]
+            if m["role"] == "assistant" and m.get("tool_calls"):
+                for tc in m["tool_calls"]:
+                    name_map[tc["id"]] = tc["function"]["name"]
+
         for i in range(start_idx, len(self._history._messages)):
             msg = self._history._messages[i]
             if msg["role"] != "tool":
@@ -211,21 +226,21 @@ class Agent:
                 data = json.loads(msg["content"])
             except (json.JSONDecodeError, TypeError):
                 continue
+            tool_name = name_map.get(msg.get("tool_call_id", ""), "未知工具")
             if not data.get("success"):
-                # 失败：保留错误信息
                 msg["content"] = json.dumps({
                     "success": False, "error": data.get("error", "未知错误"),
                 }, ensure_ascii=False)
                 continue
             raw = data.get("data", "")
             if isinstance(raw, str) and len(raw) > 200:
-                summary = f"[tapd_cli 返回 {len(raw)} 字符]"
+                summary = f"[{tool_name} 返回 {len(raw)} 字符]"
             elif isinstance(raw, list):
-                summary = f"[tapd_cli 返回 {len(raw)} 条记录]"
+                summary = f"[{tool_name} 返回 {len(raw)} 条记录]"
             elif isinstance(raw, dict):
-                summary = f"[tapd_cli 返回 {len(raw)} 个字段]"
+                summary = f"[{tool_name} 返回 {len(raw)} 个字段]"
             else:
-                summary = "[tapd_cli 执行成功]"
+                summary = f"[{tool_name} 执行成功]"
             msg["content"] = json.dumps({
                 "success": True, "summary": summary,
             }, ensure_ascii=False)

@@ -9,9 +9,9 @@ from nimo.config import Config, load_config
 from nimo.agent import Agent
 from nimo.welcome import print_welcome, print_response_box
 
-# Import to trigger tool registration
-import nimo.tools.tapd  # noqa: F401
-from nimo.tools.tapd import init_tapd
+# Import to trigger tool auto-discovery and registration
+import nimo.tools  # noqa: F401
+from nimo.tools import ToolRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ RESET = "\033[0m"
 
 
 async def build_agent(config: Config) -> Agent:
-    await init_tapd(config)
+    await ToolRegistry.get_instance().init_all(config)
     return Agent(config)
 
 

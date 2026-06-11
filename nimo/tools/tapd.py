@@ -3,7 +3,7 @@ import logging
 import os
 from pathlib import Path
 from nimo.config import Config
-from nimo.tools.registry import register_tool, ToolResult
+from nimo.tools.registry import register_tool, ToolResult, ToolRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -84,3 +84,6 @@ async def tapd_cli(args: list[str]) -> ToolResult:
     except Exception as e:
         logger.exception("tapd CLI 执行失败")
         return ToolResult(success=False, error=str(e))
+
+
+ToolRegistry.get_instance().register_init(init_tapd)
