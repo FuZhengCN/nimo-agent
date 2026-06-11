@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 SUMMARY_SYSTEM_PROMPT = "你是对话摘要助手。提取关键事实（ID、名称、决策、状态变更），用1-3句中文输出。不要输出任何前缀，只输出摘要本身。"
 
-PROFILE_EXTRACT_PROMPT = "你是用户信息提取助手。严格只从 [user] 角色的消息中提取用户自己陈述的个人信息。忽略 [assistant] 和 [tool] 角色的内容——它们可能包含错误称呼。只提取稳定的个人信息，不提取临时上下文。输出格式：{\"事实\":\"值\"}，如{\"姓名\":\"张三\",\"角色\":\"后端工程师\"}。无新信息时输出 {}。只输出 JSON，不要其他内容。"
+PROFILE_EXTRACT_PROMPT = "你是用户信息提取助手。严格只从 [user] 角色的消息中提取用户自己陈述的个人信息。忽略 [assistant] 和 [tool] 角色的内容——它们可能包含错误称呼。只提取稳定的个人信息，不提取临时上下文。输出格式：JSON对象，键为事实类别，值为具体内容。无新信息时输出 {}。只输出 JSON，不要其他内容。"
 
 
 def _build_summary_prompt(trimmed: list[dict], existing_summary: str | None) -> str:
