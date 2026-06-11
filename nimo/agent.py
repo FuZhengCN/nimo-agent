@@ -134,8 +134,8 @@ class Agent:
         self._recent_calls.clear()
         usage = {"prompt": 0, "completion": 0}
 
-        # 记录本轮起始位置，用于最终的 tool 结果压缩
-        msg_start_idx = len(self._history._messages)
+        # 未压缩的工具结果起始位置
+        last_tool_end = len(self._history._messages)
 
         for _ in range(max_rounds):
             messages = self._history.get_messages()
@@ -162,8 +162,13 @@ class Agent:
             if not message.tool_calls:
                 self._history.add({"role": "assistant", "content": message.content or ""})
                 self._last_usage = usage
-                self._compact_tool_results(msg_start_idx)
+                self._compact_tool_results(last_tool_end)
                 return message.content or ""
+
+            # LLM 已消化上一轮工具结果，压缩它们再追加新结果
+            current_end = len(self._history._messages)
+            self._compact_tool_results(last_tool_end, current_end)
+            last_tool_end = current_end
 
             # 有工具调用：记录到历史
             self._history.add({
@@ -192,7 +197,7 @@ class Agent:
                     msg = "检测到重复工具调用，已自动终止。请换个方式描述你的需求。"
                     self._history.add({"role": "assistant", "content": msg})
                     self._last_usage = usage
-                    self._compact_tool_results(msg_start_idx)
+                    self._compact_tool_results(last_tool_end)
                     return msg
 
             # 并行执行所有工具调用
@@ -205,20 +210,21 @@ class Agent:
                 })
 
         self._last_usage = usage
-        self._compact_tool_results(msg_start_idx)
+        self._compact_tool_results(last_tool_end)
         return "已达到最大工具调用轮数，操作未完成。"
 
-    def _compact_tool_results(self, start_idx: int) -> None:
-        """将本轮工具结果替换为紧凑摘要，LLM 已消化数据后不再保留原始 JSON。"""
+    def _compact_tool_results(self, start_idx: int, end_idx: int | None = None) -> None:
+        """将工具结果替换为紧凑摘要，LLM 已消化数据后不再保留原始 JSON。"""
+        end = end_idx if end_idx is not None else len(self._history._messages)
         # 第一遍：收集 tool_call_id → 工具名 映射
         name_map: dict[str, str] = {}
-        for i in range(start_idx, len(self._history._messages)):
+        for i in range(start_idx, end):
             m = self._history._messages[i]
             if m["role"] == "assistant" and m.get("tool_calls"):
                 for tc in m["tool_calls"]:
                     name_map[tc["id"]] = tc["function"]["name"]
 
-        for i in range(start_idx, len(self._history._messages)):
+        for i in range(start_idx, end):
             msg = self._history._messages[i]
             if msg["role"] != "tool":
                 continue

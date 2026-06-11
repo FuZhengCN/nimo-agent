@@ -6,6 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Nimo 是一个 CLI AI Agent，基于 DeepSeek function calling。用户通过自然语言对话执行 TAPD 操作（查项目、需求/任务/缺陷 CRUD、填工时、评论、迭代等）。项目目标是实践 AI Agent 开发。
 
+## 项目规则
+
+- **可扩展优先**：Agent 后续会逐步添加新工具，任何设计决策都要考虑可扩展性——写死一个工具名、写死一种参数格式、写死一种返回结构，都是在给未来挖坑。每次写代码时自问：如果再多 5 个工具，这段代码还能工作吗？
+
 ## 常用命令
 
 ```bash
@@ -39,10 +43,11 @@ main.py → agent.py → llm/client.py
                    → tools/registry.py
         → config.py
         → welcome.py
-        → tools/tapd.py (init + 触发 @register_tool)
+        → tools/__init__.py (pkgutil 自动发现工具模块)
+            → tools/tapd.py (@register_tool 注册)
 ```
 
-`main()` 先 `load_config()`，再 `build_agent(config)` + `print_welcome()`，最后进入输入循环。`build_agent()` 接收 `Config` 对象（非路径字符串），负责 `init_tapd()` + 构造 `Agent`。
+`main()` 先 `load_config()`，再 `build_agent(config)` + `print_welcome()`，最后进入输入循环。`build_agent()` 调用 `ToolRegistry.init_all(config)` 执行各工具的初始化函数，再构造 `Agent`。
 
 ### Agent 核心循环
 
@@ -51,13 +56,14 @@ main.py → agent.py → llm/client.py
   ↓
 ┌─ for round in 1..max_tool_rounds:
 │   LLM.chat(messages, tools, system_prompt)
-│   ├─ 无 tool_calls → 压缩工具结果，返回文本
-│   └─ 有 tool_calls → 循环检测(3次相同停止) → asyncio.gather 并行执行
+│   ├─ 无 tool_calls → 压缩剩余工具结果，返回文本
+│   └─ 有 tool_calls → 压缩上一轮工具结果 → 循环检测(3次相同停止)
+│                     → asyncio.gather 并行执行（120s超时）
 │                     → 结果截断(>4000字符)加入历史 → 继续循环
 └─ 超限 → 返回错误提示
 ```
 
-运行时回复通过 `rich.Markdown` 渲染，底边框显示 `P:X C:Y` token 消耗（prompt/completion 分列）。工具返回的原始 JSON 在 LLM 给出最终回复后被 `_compact_tool_results()` 替换为短摘要（`[tapd_cli 返回 X 字符]`），避免后续轮次携带已消化的冗余数据。
+运行时回复通过 `rich.Markdown` 渲染，底边框显示 `P:X C:Y` token 消耗（prompt/completion 分列）。每轮 LLM tool_calls 返回后，`_compact_tool_results()` 立即将**上一轮**的工具结果替换为短摘要（`[工具名 返回 X 字符]`），当前轮结果保留完整供下一轮 LLM 理解。最终回复或超限时将最后一轮结果也压缩。
 
 **内置命令**（`main.py` 输入循环中直接处理，不走 Agent）：
 
@@ -72,7 +78,9 @@ main.py → agent.py → llm/client.py
 
 `@register_tool(name, description, parameters)` 装饰器将函数注册到 `ToolRegistry` 单例。启动时 `build_tool_definitions()` 生成 OpenAI function calling 格式传给 LLM，运行时 `execute(name, args)` 根据 tool_call 分发。
 
-新增工具只需：写函数 + 加装饰器 + import 该模块。不改任何中央配置。
+`tools/__init__.py` 通过 `pkgutil.iter_modules` 自动发现并加载 `nimo.tools` 包下所有不以 `_` 开头的模块，无需手动 import。需要初始化的工具通过 `ToolRegistry.register_init()` 注册初始化函数，`main.py` 中的 `build_agent()` 调用 `init_all(config)` 统一执行。
+
+新增工具只需：在 `nimo/tools/` 下创建模块 → 写函数 + 加 `@register_tool` 装饰器。不改任何中央配置。
 
 ### System Prompt
 
@@ -86,11 +94,11 @@ main.py → agent.py → llm/client.py
 
 | 模块 | 关键设计 |
 |------|---------|
-| `agent.py` | `Agent.run()` 编排循环：LLM 调用捕获 `LLMError` 防崩溃、`asyncio.gather` 并行执行工具 + 120s 超时 + 结果超 4000 字符截断、连续 3 次相同调用自动终止、LLM 回复后 `_compact_tool_results()` 压缩原始 JSON 为摘要；`_trimmed_llm_call()` 复用；Profile 上下文循环外注入；`last_usage` 属性暴露 token 统计 |
+| `agent.py` | `Agent.run()` 编排循环：LLM 调用捕获 `LLMError` 防崩溃、`asyncio.gather` 并行执行工具 + 120s 超时 + 结果超 4000 字符截断、连续 3 次相同调用自动终止、逐轮 `_compact_tool_results()` 压缩已消化工具结果（动态 name_map 映射工具名，替代硬编码）；`_trimmed_llm_call()` 复用；Profile 上下文循环外注入；`last_usage` 属性暴露 token 统计 |
 | `llm/client.py` | `LLMClient.chat()` 封装 DeepSeek（兼容 OpenAI SDK），4次尝试（1+3重试），仅对 RateLimitError/APITimeoutError/InternalServerError 重试 |
 | `memory/history.py` | `ConversationHistory` 滑动窗口截断 + `_trimmed_buffer` 暂存被 trim 消息 + `get_trimmed()`/`pop_trimmed()` 分离 peek/pop 语义；`from_dict()` 恢复后自动 `_trim()` 确保加载即裁剪；`save()` 原子写入（.tmp → .json 防损坏）；JSON 文件持久化（`~/.nimo/sessions/`） |
 | `memory/profile.py` | `UserProfile` 结构化长期记忆（`dict[str,str]` 键值对），独立于滑动窗口，`~/.nimo/profile.json` 持久化；Agent 在 trim 时调 LLM 提取事实（`_maybe_extract_profile()`），注入到每条消息头部 `[用户信息]` |
-| `tools/registry.py` | `ToolRegistry` 单例 + `@register_tool` 装饰器；`reset()` 用于测试隔离 |
+| `tools/registry.py` | `ToolRegistry` 单例 + `@register_tool` 装饰器 + `register_init()`/`init_all()` 通用初始化机制；`reset()` 用于测试隔离 |
 | `tools/tapd.py` | `init_tapd()` 存储配置；唯一工具 `tapd_cli` 调用外部 `tapd.exe` 二进制；`_validate_args()` 子命令白名单 + 路径遍历校验防止 prompt 注入 |
 | `config.py` | `load_config()` 加载 YAML + `_env_override()` 环境变量覆盖（`LLM_API_KEY`、`TAPD_ACCESS_TOKEN`） |
 | `welcome.py` | `print_welcome(model, cwd, version)` 启动欢迎画面（24bit ANSI 真彩色，6:4 双栏）；`print_response_box(text, token_summary)` 用 `rich.Markdown` + 无色 Theme 渲染回复，仅上下品牌色边框，token 显示在底边框右侧（`P:X C:Y` 格式）；Theme 模块级常量避免每次重建 |
