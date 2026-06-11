@@ -56,7 +56,7 @@ main.py → agent.py → llm/client.py
 └─ 超限 → 返回错误提示
 ```
 
-运行时：`agent.run()` 前显示灰色 `⏳ 思考中...` 提示，完成后清除，回复包在蓝青色 ANSI 卡片框（`print_response_box()`）内输出。输入提示符 `>` 和键入文字为暖橙色（RGB 242,138,56）。HTTP 请求日志（httpx/openai）已静默到 WARNING 级别，不污染控制台。
+运行时：`agent.run()` 前显示灰色 `⏳ 思考中...` 提示，完成后清除，回复包在蓝青色 ANSI 卡片框（`print_response_box()`）内输出。输入提示符 `❯` 和键入文字为暖橙色（RGB 242,138,56）。HTTP 请求日志（httpx/openai）已静默到 WARNING 级别，不污染控制台。
 
 **内置命令**（`main.py` 输入循环中直接处理，不走 Agent）：
 
@@ -87,6 +87,7 @@ main.py → agent.py → llm/client.py
 | `agent.py` | `Agent.run()` 编排循环；`_maybe_summarize_trimmed()` 在历史超窗时调 LLM 生成摘要（`_build_summary_prompt()` 构建请求，`SUMMARY_SYSTEM_PROMPT` 控制摘要风格）；`save_history()`/`clear_history()` 管理持久化 |
 | `llm/client.py` | `LLMClient.chat()` 封装 DeepSeek（兼容 OpenAI SDK），4次尝试（1+3重试），仅对 RateLimitError/APITimeoutError/InternalServerError 重试 |
 | `memory/history.py` | `ConversationHistory` 滑动窗口截断 + `_trimmed_buffer` 暂存被 trim 消息 + `pop_trimmed()`/`set_summary()` 供 Agent 调度摘要压缩 + `to_dict()`/`from_dict()`/`save()`/`load()` JSON 文件持久化（`~/.nimo/sessions/`） |
+| `memory/profile.py` | `UserProfile` 结构化长期记忆（`dict[str,str]` 键值对），独立于滑动窗口，`~/.nimo/profile.json` 持久化；Agent 在 trim 时调 LLM 提取事实（`_maybe_extract_profile()`），注入到每条消息头部 `[用户信息]` |
 | `tools/registry.py` | `ToolRegistry` 单例 + `@register_tool` 装饰器；`reset()` 用于测试隔离 |
 | `tools/tapd.py` | `init_tapd()` 存储配置；唯一工具 `tapd_cli` 调用外部 `tapd.exe` 二进制；`_validate_args()` 子命令白名单 + 路径遍历校验防止 prompt 注入 |
 | `config.py` | `load_config()` 加载 YAML + `_env_override()` 环境变量覆盖（`LLM_API_KEY`、`TAPD_ACCESS_TOKEN`） |

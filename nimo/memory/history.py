@@ -63,9 +63,9 @@ class ConversationHistory:
         }
 
     @classmethod
-    def from_dict(cls, data: dict, session_id: str = "default") -> "ConversationHistory":
+    def from_dict(cls, data: dict, session_id: str = "default", max_rounds: int | None = None) -> "ConversationHistory":
         history = cls(
-            max_rounds=data.get("max_rounds", 10),
+            max_rounds=max_rounds if max_rounds is not None else data.get("max_rounds", 10),
             session_id=session_id,
         )
         history._messages = data.get("messages", [])
@@ -89,19 +89,19 @@ class ConversationHistory:
     def load(
         cls,
         session_id: str = "default",
-        max_rounds: int = 10,
+        max_rounds: int | None = None,
         base_dir: str | Path | None = None,
     ) -> "ConversationHistory":
         base = Path(base_dir) if base_dir else Path.home() / ".nimo" / "sessions"
         path = base / f"{session_id}.json"
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
-            return cls.from_dict(data, session_id=session_id)
+            return cls.from_dict(data, session_id=session_id, max_rounds=max_rounds)
         except FileNotFoundError:
             logger.info("未找到历史文件 %s，使用空历史", path)
         except (json.JSONDecodeError, KeyError, TypeError) as e:
             logger.warning("历史文件损坏，使用空历史：%s", e)
-        return cls(max_rounds=max_rounds, session_id=session_id)
+        return cls(max_rounds=max_rounds or 10, session_id=session_id)
 
     def clear(self, base_dir: str | Path | None = None) -> None:
         self._messages.clear()

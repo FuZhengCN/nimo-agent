@@ -32,7 +32,7 @@ async def main() -> None:
     print_welcome(model=config.llm.model, cwd=os.getcwd(), version="0.1.0")
     while True:
         try:
-            user_input = input(f"{ORANGE}> ")
+            user_input = input(f"{ORANGE}❯ ")
         except (EOFError, KeyboardInterrupt):
             agent.save_history()
             print("\n再见！")

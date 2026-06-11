@@ -7,6 +7,7 @@ llm:
   temperature: 0.3  # 越低格式越稳定，越高越随机
   history_persist: true     # 会话历史持久化（~/.nimo/sessions/default.json）
   history_summarize: true   # 轮次超限时 LLM 摘要压缩旧消息
+  profile_extract: true     # 从对话中提取用户长期信息（姓名、偏好等）
 
 tapd:
   api_base: "https://api.tapd.cn"

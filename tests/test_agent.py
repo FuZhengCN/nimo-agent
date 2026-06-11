@@ -198,7 +198,8 @@ async def test_agent_summarizes_on_trim(sample_config):
 
     # 手动调用 _maybe_summarize_trimmed（run() 里也会调）
     agent._history.add({"role": "user", "content": "建需求"})  # 触发trim
-    await agent._maybe_summarize_trimmed()
+    trimmed = agent._history.pop_trimmed()
+    await agent._maybe_summarize_trimmed(trimmed)
 
     # 摘要 LLM 应该被调用
     mock_chat.assert_called_once()
@@ -220,7 +221,8 @@ async def test_agent_no_summarize_when_disabled(sample_config):
     agent._llm_client.chat = mock_chat
 
     agent._history.add({"role": "user", "content": "建需求"})
-    await agent._maybe_summarize_trimmed()
+    trimmed = agent._history.pop_trimmed()
+    await agent._maybe_summarize_trimmed(trimmed)
 
     # 不应调用 LLM 做摘要
     mock_chat.assert_not_called()
@@ -266,3 +268,85 @@ def test_build_summary_prompt_truncates_tool_content():
     assert len(long_content) > 500
     assert "..." in prompt
     assert len(prompt) < 700  # tool 内容被截断
+
+
+# --- 用户档案集成测试 ---
+
+@pytest.mark.asyncio
+async def test_agent_extracts_profile_on_trim(sample_config):
+    from nimo.agent import Agent
+
+    sample_config.llm.profile_extract = True
+    agent = Agent(sample_config)
+    agent._history._max_rounds = 1
+
+    agent._history.add({"role": "user", "content": "我叫张三"})
+    agent._history.add({"role": "assistant", "content": "你好张三"})
+
+    profile_response = make_mock_chat_response('{"姓名":"张三"}')
+    mock_chat = AsyncMock(return_value=profile_response)
+    agent._llm_client.chat = mock_chat
+
+    agent._history.add({"role": "user", "content": "帮我查项目"})
+    trimmed = agent._history.pop_trimmed()
+    await agent._maybe_extract_profile(trimmed)
+
+    mock_chat.assert_called_once()
+    assert agent._profile.facts == {"姓名": "张三"}
+
+
+@pytest.mark.asyncio
+async def test_agent_no_profile_when_disabled(sample_config):
+    from nimo.agent import Agent
+
+    sample_config.llm.profile_extract = False
+    agent = Agent(sample_config)
+    agent._history._max_rounds = 1
+
+    agent._history.add({"role": "user", "content": "我叫李四"})
+    agent._history.add({"role": "assistant", "content": "你好"})
+
+    mock_chat = AsyncMock()
+    agent._llm_client.chat = mock_chat
+
+    agent._history.add({"role": "user", "content": "查项目"})
+    trimmed = agent._history.pop_trimmed()
+    await agent._maybe_extract_profile(trimmed)
+
+    mock_chat.assert_not_called()
+
+
+def test_agent_injects_profile_in_run(sample_config):
+    from nimo.agent import Agent
+
+    sample_config.llm.profile_extract = True
+    agent = Agent(sample_config)
+    agent._profile.update({"姓名": "王五"})
+    agent._llm_client.chat = AsyncMock(
+        return_value=make_mock_chat_response("你好王五！")
+    )
+
+    import asyncio
+    asyncio.run(agent.run("你好"))
+    # Can't assert on messages since run() consumes them, but we can verify profile context exists
+    assert "[用户信息]" in agent._profile.to_context()
+
+
+def test_clear_history_also_clears_profile(sample_config):
+    from nimo.agent import Agent
+
+    sample_config.llm.profile_extract = True
+    agent = Agent(sample_config)
+    agent._profile.update({"姓名": "张三"})
+    agent._history.add({"role": "user", "content": "hello"})
+
+    agent.clear_history()
+    assert agent._history._messages == []
+    assert agent._profile.is_empty
+
+
+def test_agent_empty_profile_context_not_injected(sample_config):
+    from nimo.agent import Agent
+
+    agent = Agent(sample_config)
+    assert agent._profile.to_context() is None

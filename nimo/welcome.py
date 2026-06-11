@@ -119,7 +119,7 @@ def _build_right_panel(right_w: int) -> list[str]:
 def print_response_box(text: str) -> None:
     """以卡片框输出 LLM 回复。"""
     term_w = _get_term_width()
-    box_w = min(term_w - 4, 72)
+    box_w = term_w - 4
     inner_w = box_w - 2  # 左侧 2 格缩进
 
     # 按换行拆分，超长行按显示宽度折行
@@ -155,10 +155,9 @@ def print_response_box(text: str) -> None:
 def print_welcome(model: str, cwd: str, version: str) -> None:
     """打印完整欢迎画面（自动撑满终端宽度）。"""
     term_w = _get_term_width()
-    left_w = max(43, term_w * 42 // 100)
-    # 确保右侧至少 35 字符宽，容纳 Tips
-    left_w = min(left_w, term_w - 38)
-    right_w = term_w - left_w - 3
+    left_w = term_w * 6 // 10
+    right_w = max(30, term_w - left_w - 3)
+    left_w = term_w - right_w - 3
 
     left_lines = _build_left_panel(model, cwd, left_w)
     right_lines = _build_right_panel(right_w)
