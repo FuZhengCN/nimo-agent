@@ -19,19 +19,21 @@ RESET = "\033[0m"
 _ANSI_RE = re.compile(r"\033\[[0-9;]*m")
 
 NIMO_LOGO = [
-    "███╗   ██╗██╗███╗   ███╗ ██████╗",
-    "████╗  ██║██║████╗ ████║██╔═══██╗",
-    "██╔██╗ ██║██║██╔████╔██║██║   ██║",
-    "██║╚██╗██║██║██║╚██╔╝██║██║   ██║",
-    "██║ ╚████║██║██║ ╚═╝ ██║╚██████╔╝",
-    "╚═╝  ╚═══╝╚═╝╚═╝     ╚═╝ ╚═════╝",
+    " ███╗   ██╗ ██╗ ███╗   ███╗  ██████╗ ",
+    " ████╗  ██║ ██║ ████╗ ████║ ██╔═══██╗",
+    " ██╔██╗ ██║ ██║ ██╔████╔██║ ██║   ██║",
+    " ██║╚██╗██║ ██║ ██║╚██╔╝██║ ██║   ██║",
+    " ██║ ╚████║ ██║ ██║ ╚═╝ ██║ ╚██████╔╝",
+    " ╚═╝  ╚═══╝ ╚═╝ ╚═╝     ╚═╝  ╚═════╝ ",
 ]
 
-TIPS = [
-    "/help 查看帮助与可用命令",
+COMMAND_TIPS = [
     "/clear 清除当前对话历史",
     "/clear-profile 清除长期用户档案",
     "/exit 退出程序",
+]
+
+EXAMPLE_TIPS = [
     "\"帮我看看有哪些项目\"",
     "\"创建一个需求：修复登录bug\"",
     "\"给任务1001填4小时工时\"",
@@ -100,6 +102,8 @@ def _build_left_panel(model: str, cwd: str, left_w: int) -> list[str]:
     lines.append(" " * left_w)
     welcome = _color_text("Welcome to Nimo!", "1")
     lines.append(_pad_visible(welcome, left_w, "center"))
+    desc = f"\033[2m通过自然语言操作 TAPD 的 AI 助手{RESET}"
+    lines.append(_pad_visible(desc, left_w, "center"))
     lines.append(" " * left_w)
     for logo_line in NIMO_LOGO:
         colored = _color_text(logo_line, "38;2;36;168;208")
@@ -118,8 +122,15 @@ def _build_right_panel(right_w: int) -> list[str]:
     title = _color_text("Tips for getting started", "38;2;242;138;56")
     lines.append(_pad_visible(title, right_w, "left"))
     lines.append(" " * right_w)
-    for tip in TIPS:
-        lines.append(_pad_visible(f"· {tip}", right_w, "left"))
+    # 命令
+    lines.append(_pad_visible(_color_text("命令", "38;2;242;138;56"), right_w, "left"))
+    for cmd in COMMAND_TIPS:
+        lines.append(_pad_visible(f"  {cmd}", right_w, "left"))
+    lines.append(" " * right_w)
+    # 示例
+    lines.append(_pad_visible(_color_text("试试这样说", "38;2;242;138;56"), right_w, "left"))
+    for ex in EXAMPLE_TIPS:
+        lines.append(_pad_visible(f"  {ex}", right_w, "left"))
     return lines
 
 

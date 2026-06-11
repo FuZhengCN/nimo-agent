@@ -1,6 +1,6 @@
 import io
 import sys
-from nimo.display import NIMO_LOGO, TIPS, _build_top, _build_bottom, _build_row, _color_text, _display_width, print_welcome
+from nimo.display import NIMO_LOGO, COMMAND_TIPS, EXAMPLE_TIPS, _build_top, _build_bottom, _build_row, _color_text, _display_width, print_welcome, print_response_box
 
 
 class TestConstants:
@@ -11,11 +11,18 @@ class TestConstants:
         for line in NIMO_LOGO:
             assert len(line.strip()) > 0
 
-    def test_tips_has_entries(self):
-        assert len(TIPS) >= 4
+    def test_command_tips_has_entries(self):
+        assert len(COMMAND_TIPS) >= 2
 
-    def test_tips_non_empty(self):
-        for tip in TIPS:
+    def test_command_tips_non_empty(self):
+        for tip in COMMAND_TIPS:
+            assert len(tip) > 0
+
+    def test_example_tips_has_entries(self):
+        assert len(EXAMPLE_TIPS) >= 3
+
+    def test_example_tips_non_empty(self):
+        for tip in EXAMPLE_TIPS:
             assert len(tip) > 0
 
 
@@ -87,4 +94,51 @@ class TestPrintWelcome:
         assert "╰" in text
         assert "╯" in text
         assert len(text.splitlines()) >= 5
+
+
+class TestPrintResponseBox:
+    def test_basic_rendering(self):
+        output = io.StringIO()
+        try:
+            sys.stdout = output
+            print_response_box("Hello World")
+        finally:
+            sys.stdout = sys.__stdout__
+        text = output.getvalue()
+        assert "Hello World" in text
+        assert "╭" in text
+        assert "╰" in text
+
+    def test_with_token_summary(self):
+        output = io.StringIO()
+        try:
+            sys.stdout = output
+            print_response_box("Test", token_summary="P:100 C:50")
+        finally:
+            sys.stdout = sys.__stdout__
+        text = output.getvalue()
+        assert "P:100 C:50" in text
+        assert "╰" in text
+
+    def test_empty_text(self):
+        output = io.StringIO()
+        try:
+            sys.stdout = output
+            print_response_box("")
+        finally:
+            sys.stdout = sys.__stdout__
+        text = output.getvalue()
+        assert "╭" in text
+        assert "╰" in text
+
+    def test_markdown_rendering(self):
+        output = io.StringIO()
+        try:
+            sys.stdout = output
+            print_response_box("# Title\n\nSome **bold** text")
+        finally:
+            sys.stdout = sys.__stdout__
+        text = output.getvalue()
+        assert "Title" in text
+        assert "bold" in text
 
