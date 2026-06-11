@@ -309,7 +309,6 @@ async def test_agent_extracts_profile_on_trim(sample_config):
 
     sample_config.llm.profile_extract = True
     agent = Agent(sample_config)
-    agent._profile.clear()  # 清除磁盘残留数据，保证测试隔离
     agent._history._max_rounds = 1
 
     agent._history.add({"role": "user", "content": "我叫张三"})
@@ -321,7 +320,8 @@ async def test_agent_extracts_profile_on_trim(sample_config):
 
     agent._history.add({"role": "user", "content": "帮我查项目"})
     trimmed = agent._history.pop_trimmed()
-    await agent._maybe_extract_profile(trimmed)
+    with patch.object(agent._profile, "save"):
+        await agent._maybe_extract_profile(trimmed)
 
     mock_chat.assert_called_once()
     assert agent._profile.facts == {"姓名": "张三"}

@@ -62,6 +62,10 @@ class ToolRegistry:
             except Exception:
                 logger.warning("工具初始化 %s 失败，跳过", getattr(init_fn, "__name__", init_fn), exc_info=True)
 
+    def list_tools(self) -> list[tuple[str, str]]:
+        """返回 [(name, description), ...]，供 system prompt 等场景使用。"""
+        return [(t.name, t.description) for t in self._tools.values()]
+
     def build_tool_definitions(self) -> list[dict]:
         return [
             {

@@ -63,6 +63,8 @@ async def tapd_cli(args: list[str]) -> ToolResult:
         return ToolResult(success=False, error="TAPD 配置未初始化，请检查 config.yaml")
     try:
         env = os.environ.copy()
+        # 注意：Token 通过环境变量传入外部二进制 tapd.exe。若该二进制
+        # 或其依赖库输出环境信息到日志/标准输出，Token 存在泄露风险。
         env["TAPD_ACCESS_TOKEN"] = _config.tapd.access_token
         if _config.tapd.api_base and _config.tapd.api_base != "https://api.tapd.cn":
             env["TAPD_API_BASE_URL"] = _config.tapd.api_base

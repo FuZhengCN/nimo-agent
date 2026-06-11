@@ -67,8 +67,8 @@ class Agent:
             return "你是 Nimo，一个帮助用户完成日常工作的助手。"
         # 动态追加可用工具列表
         tool_lines = []
-        for t in self._registry._tools.values():
-            tool_lines.append(f"- `{t.name}`：{t.description}")
+        for name, desc in self._registry.list_tools():
+            tool_lines.append(f"- `{name}`：{desc}")
         if tool_lines:
             base += "\n\n## 可用工具\n" + "\n".join(tool_lines)
         return base
