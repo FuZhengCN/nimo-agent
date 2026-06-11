@@ -54,7 +54,7 @@ class UserProfile:
             if isinstance(data, dict):
                 profile._facts = {str(k): str(v) for k, v in data.items() if v}
         except FileNotFoundError:
-            logger.info("未找到用户档案文件 %s", path)
+            logger.debug("未找到用户档案文件 %s", path)
         except (json.JSONDecodeError, TypeError) as e:
             logger.warning("用户档案文件损坏，使用空档案：%s", e)
         return profile

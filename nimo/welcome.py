@@ -117,37 +117,41 @@ def _build_right_panel(right_w: int) -> list[str]:
 
 
 def print_response_box(text: str) -> None:
-    """以卡片框输出 LLM 回复。"""
+    """以 rich Markdown 渲染 LLM 回复，仅上下边框。"""
+    import io
+    from rich.console import Console
+    from rich.markdown import Markdown
+    from rich.style import Style
+    from rich.theme import Theme
+
+    _content_theme = Theme({
+        "markdown.h1": Style(bold=True),
+        "markdown.h2": Style(bold=True),
+        "markdown.h3": Style(bold=True),
+        "markdown.h4": Style(bold=True),
+        "markdown.h5": Style(bold=True),
+        "markdown.h6": Style(bold=True),
+        "markdown.code": Style(dim=True),
+        "markdown.code_block": Style(dim=True),
+        "markdown.table.header": Style(bold=True),
+        "markdown.table.border": Style(dim=True),
+        "markdown.item.bullet": Style(dim=True),
+        "markdown.block_quote": Style(dim=True),
+    })
+
     term_w = _get_term_width()
     box_w = term_w - 4
-    inner_w = box_w - 2  # 左侧 2 格缩进
 
-    # 按换行拆分，超长行按显示宽度折行
-    raw_lines = text.split("\n")
-    lines = []
-    for para in raw_lines:
-        if para == "":
-            lines.append("")
-            continue
-        while _display_width(para) > inner_w:
-            # 从 para 中取出 display width <= inner_w 的前缀
-            cut = 0
-            cur_w = 0
-            for ch in para:
-                ch_w = 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
-                if cur_w + ch_w > inner_w:
-                    break
-                cur_w += ch_w
-                cut += 1
-            lines.append(para[:cut])
-            para = para[cut:]
-        lines.append(para)
+    buf = io.StringIO()
+    console = Console(file=buf, width=box_w - 2, force_terminal=True, theme=_content_theme)
+    console.print(Markdown(text))
+    rendered = buf.getvalue().rstrip("\n")
 
     top = f"{CYAN}╭─ Nimo {'─' * (box_w - 9)}╮{RESET}"
     bottom = f"{CYAN}╰{'─' * (box_w - 2)}╯{RESET}"
 
     print(top)
-    for line in lines:
+    for line in rendered.split("\n"):
         print(f"  {line}")
     print(bottom)
 

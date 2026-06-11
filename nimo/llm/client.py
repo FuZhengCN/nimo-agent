@@ -24,6 +24,7 @@ class LLMClient:
             timeout=60.0,
         )
         self.model = config.llm.model
+        self.temperature = config.llm.temperature
         self._max_attempts = 4  # 1 次初始调用 + 3 次重试
 
     async def chat(
@@ -44,6 +45,7 @@ class LLMClient:
                 kwargs = {
                     "model": self.model,
                     "messages": full_messages,
+                    "temperature": self.temperature,
                 }
                 if tools:
                     kwargs["tools"] = tools

@@ -98,7 +98,7 @@ class ConversationHistory:
             data = json.loads(path.read_text(encoding="utf-8"))
             return cls.from_dict(data, session_id=session_id, max_rounds=max_rounds)
         except FileNotFoundError:
-            logger.info("未找到历史文件 %s，使用空历史", path)
+            logger.debug("未找到历史文件 %s，使用空历史", path)
         except (json.JSONDecodeError, KeyError, TypeError) as e:
             logger.warning("历史文件损坏，使用空历史：%s", e)
         return cls(max_rounds=max_rounds or 10, session_id=session_id)

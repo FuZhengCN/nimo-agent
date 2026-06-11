@@ -56,7 +56,7 @@ main.py → agent.py → llm/client.py
 └─ 超限 → 返回错误提示
 ```
 
-运行时：`agent.run()` 前显示灰色 `⏳ 思考中...` 提示，完成后清除，回复包在蓝青色 ANSI 卡片框（`print_response_box()`）内输出。输入提示符 `❯` 和键入文字为暖橙色（RGB 242,138,56）。HTTP 请求日志（httpx/openai）已静默到 WARNING 级别，不污染控制台。
+运行时：`agent.run()` 前显示灰色 `⏳ 思考中...` 提示，完成后清除。回复通过 `rich.Markdown` 渲染（内容区零额外颜色，仅粗体/暗色做字形区分），外框仅上下两条品牌蓝青色边框（`print_response_box()`）。输入提示符 `❯` 和键入文字为暖橙色（RGB 242,138,56）。HTTP 请求日志（httpx/openai）已静默到 WARNING 级别，Pydantic V1 兼容警告已屏蔽。
 
 **内置命令**（`main.py` 输入循环中直接处理，不走 Agent）：
 
@@ -91,7 +91,7 @@ main.py → agent.py → llm/client.py
 | `tools/registry.py` | `ToolRegistry` 单例 + `@register_tool` 装饰器；`reset()` 用于测试隔离 |
 | `tools/tapd.py` | `init_tapd()` 存储配置；唯一工具 `tapd_cli` 调用外部 `tapd.exe` 二进制；`_validate_args()` 子命令白名单 + 路径遍历校验防止 prompt 注入 |
 | `config.py` | `load_config()` 加载 YAML + `_env_override()` 环境变量覆盖（`LLM_API_KEY`、`TAPD_ACCESS_TOKEN`） |
-| `welcome.py` | `print_welcome(model, cwd, version)` 启动欢迎画面 + `print_response_box()` 回复卡片；自动检测终端宽度，左 Logo + 右 Tips 双栏布局，24bit ANSI 真彩色 |
+| `welcome.py` | `print_welcome(model, cwd, version)` 启动欢迎画面（24bit ANSI 真彩色，6:4 双栏）；`print_response_box()` 用 `rich.Markdown` + 自定义无色 Theme 渲染回复，仅上下品牌色边框 |
 
 ### 配置
 
@@ -107,6 +107,7 @@ llm:
   temperature: 0.3
   history_persist: true     # 会话历史持久化（~/.nimo/sessions/default.json）
   history_summarize: true   # 轮次超限时 LLM 摘要压缩旧消息
+  profile_extract: true     # 从对话中提取用户信息存入长期档案（~/.nimo/profile.json）
 tapd:
   api_base: "https://api.tapd.cn"
   access_token: "个人令牌"

@@ -1,6 +1,10 @@
 import asyncio
 import logging
 import os
+import warnings
+
+warnings.filterwarnings("ignore", message=".*Pydantic V1.*", module="openai.*")
+
 from nimo.config import Config, load_config
 from nimo.agent import Agent
 from nimo.welcome import print_welcome, print_response_box
