@@ -14,6 +14,9 @@ class LLMConfig:
     model: str
     max_tool_rounds: int
     history_rounds: int
+    temperature: float = 0.3
+    history_persist: bool = False
+    history_summarize: bool = False
 
 
 @dataclass
@@ -65,6 +68,9 @@ def load_config(path: str = "config.yaml") -> Config:
         model=raw["llm"]["model"],
         max_tool_rounds=raw["llm"]["max_tool_rounds"],
         history_rounds=raw["llm"]["history_rounds"],
+        temperature=raw["llm"].get("temperature", 0.3),
+        history_persist=raw["llm"].get("history_persist", False),
+        history_summarize=raw["llm"].get("history_summarize", False),
     )
     tapd = TapdConfig(
         api_base=tapd_raw["api_base"],

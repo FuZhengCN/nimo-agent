@@ -4,6 +4,9 @@ llm:
   model: "deepseek-chat"
   max_tool_rounds: 10
   history_rounds: 10
+  temperature: 0.3  # 越低格式越稳定，越高越随机
+  history_persist: true     # 会话历史持久化（~/.nimo/sessions/default.json）
+  history_summarize: true   # 轮次超限时 LLM 摘要压缩旧消息
 
 tapd:
   api_base: "https://api.tapd.cn"

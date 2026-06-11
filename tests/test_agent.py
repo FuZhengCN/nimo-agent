@@ -129,3 +129,140 @@ def test_agent_system_prompt_fallback():
         agent = Agent(config)
         assert "Nimo" in agent._system_prompt
         assert "日常" in agent._system_prompt
+
+
+# --- 记忆持久化集成测试 ---
+
+@pytest.mark.asyncio
+async def test_agent_saves_history_after_run(sample_config, tmp_path):
+    from nimo.agent import Agent
+    from unittest.mock import patch
+
+    sample_config.llm.history_persist = True
+    agent = Agent(sample_config)
+    agent._llm_client.chat = AsyncMock(return_value=make_mock_chat_response("你好！"))
+
+    with patch.object(agent._history, "save") as mock_save:
+        await agent.run("你好")
+        mock_save.assert_not_called()  # run() 不负责 save，main.py 负责
+
+    agent.save_history()  # main.py 调用
+    # save 应该正常工作（不抛异常）
+
+
+def test_agent_loads_history_with_persist(sample_config, tmp_path):
+    from nimo.agent import Agent
+    from nimo.memory.history import ConversationHistory
+
+    # 先保存一段历史
+    history = ConversationHistory(max_rounds=10, session_id="default")
+    history.add({"role": "user", "content": "previous question"})
+    history.add({"role": "assistant", "content": "previous answer"})
+    history.save(base_dir=tmp_path)
+
+    sample_config.llm.history_persist = True
+    with patch("nimo.agent.ConversationHistory.load", return_value=history):
+        agent = Agent(sample_config)
+        msgs = agent._history.get_messages()
+        assert len(msgs) == 2
+        assert msgs[0]["content"] == "previous question"
+
+
+def test_agent_no_persist_creates_empty_history(sample_config):
+    from nimo.agent import Agent
+
+    sample_config.llm.history_persist = False
+    agent = Agent(sample_config)
+    msgs = agent._history.get_messages()
+    assert len(msgs) == 0
+
+
+# --- 摘要压缩集成测试 ---
+
+@pytest.mark.asyncio
+async def test_agent_summarizes_on_trim(sample_config):
+    from nimo.agent import Agent
+
+    sample_config.llm.history_summarize = True
+    agent = Agent(sample_config)
+    agent._history._max_rounds = 1  # 只保留1轮，写第2轮时触发trim
+
+    # 第1轮
+    agent._history.add({"role": "user", "content": "查项目"})
+    agent._history.add({"role": "assistant", "content": "查到3个项目"})
+
+    # mock LLM 摘要响应
+    summary_response = make_mock_chat_response("用户查询了项目列表")
+    mock_chat = AsyncMock(return_value=summary_response)
+    agent._llm_client.chat = mock_chat
+
+    # 手动调用 _maybe_summarize_trimmed（run() 里也会调）
+    agent._history.add({"role": "user", "content": "建需求"})  # 触发trim
+    await agent._maybe_summarize_trimmed()
+
+    # 摘要 LLM 应该被调用
+    mock_chat.assert_called_once()
+    assert agent._history.summary == "用户查询了项目列表"
+
+
+@pytest.mark.asyncio
+async def test_agent_no_summarize_when_disabled(sample_config):
+    from nimo.agent import Agent
+
+    sample_config.llm.history_summarize = False
+    agent = Agent(sample_config)
+    agent._history._max_rounds = 1
+
+    agent._history.add({"role": "user", "content": "查项目"})
+    agent._history.add({"role": "assistant", "content": "查到3个项目"})
+
+    mock_chat = AsyncMock()
+    agent._llm_client.chat = mock_chat
+
+    agent._history.add({"role": "user", "content": "建需求"})
+    await agent._maybe_summarize_trimmed()
+
+    # 不应调用 LLM 做摘要
+    mock_chat.assert_not_called()
+
+
+def test_clear_history_resets_all(sample_config, tmp_path):
+    from nimo.agent import Agent
+
+    sample_config.llm.history_persist = True
+    agent = Agent(sample_config)
+    agent._history.add({"role": "user", "content": "hello"})
+    agent._history.set_summary("some summary")
+    agent._history.save(base_dir=tmp_path)
+
+    agent.clear_history()
+    assert len(agent._history._messages) == 0
+    assert agent._history.summary is None
+
+
+def test_build_summary_prompt_with_existing():
+    from nimo.agent import _build_summary_prompt
+
+    trimmed = [
+        {"role": "user", "content": "查项目"},
+        {"role": "assistant", "content": "查到3个项目：A、B、C"},
+    ]
+    prompt = _build_summary_prompt(trimmed, None)
+    assert "查项目" in prompt
+    assert "A、B、C" in prompt
+    assert "之前的摘要" not in prompt
+
+    prompt2 = _build_summary_prompt(trimmed, "用户之前查过项目")
+    assert "之前的摘要" in prompt2
+    assert "用户之前查过项目" in prompt2
+
+
+def test_build_summary_prompt_truncates_tool_content():
+    from nimo.agent import _build_summary_prompt
+
+    long_content = "x" * 1000
+    trimmed = [{"role": "tool", "content": long_content}]
+    prompt = _build_summary_prompt(trimmed, None)
+    assert len(long_content) > 500
+    assert "..." in prompt
+    assert len(prompt) < 700  # tool 内容被截断

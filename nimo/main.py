@@ -34,11 +34,33 @@ async def main() -> None:
         try:
             user_input = input(f"{ORANGE}> ")
         except (EOFError, KeyboardInterrupt):
+            agent.save_history()
             print("\n再见！")
             break
         if user_input.strip() == "/exit":
+            agent.save_history()
             print("再见！")
             break
+        if user_input.strip() == "/clear":
+            agent.clear_history()
+            print("历史已清除")
+            continue
+        if user_input.strip() == "/help":
+            print("""
+可用命令：
+  /help     查看帮助
+  /clear    清除当前对话历史
+  /exit     退出程序
+
+用法示例：
+  · 帮我看看有哪些项目
+  · 列出项目755的任务
+  · 创建一个需求：修复登录bug
+  · 给任务1001填4小时工时
+  · 当前有哪些活跃的迭代？
+
+所有操作通过自然语言驱动，直接输入即可。""")
+            continue
         if not user_input.strip():
             continue
         try:
@@ -46,8 +68,10 @@ async def main() -> None:
             response = await agent.run(user_input)
             print(" " * 20, end="\r")
             print_response_box(response)
+            agent.save_history()
             print()
         except KeyboardInterrupt:
+            agent.save_history()
             print("\n已取消，输入 /exit 退出")
 
 
