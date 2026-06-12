@@ -60,13 +60,17 @@ class Agent:
         self._last_tool_counts: dict[str, int] | None = None
 
     def _load_system_prompt(self) -> str:
+        from datetime import date
+        _WEEKDAYS = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
+        today = date.today()
+        today_str = f"{today.year}年{today.month}月{today.day}日 {_WEEKDAYS[today.weekday()]}"
         prompt_path = Path(__file__).resolve().parent / "prompts" / "system.md"
         try:
             base = prompt_path.read_text(encoding="utf-8")
         except FileNotFoundError:
             logger.warning("system.md 未找到，使用默认提示")
             return "你是 Nimo，一个帮助用户完成日常工作的助手。"
-        # 动态追加可用工具列表
+        base = f"今天是 {today_str}。\n\n" + base
         tool_lines = []
         for name, desc in self._registry.list_tools():
             tool_lines.append(f"- `{name}`：{desc}")

@@ -16,3 +16,8 @@ tapd:
   # nick: "your-tapd-nickname"
   # company_id: "your-company-id"
   # owner: "your-username"
+
+# tortoisesvn:
+#   paths:
+#     myproject: 'C:\path\to\working\copy'
+#     other: 'D:\other\project'

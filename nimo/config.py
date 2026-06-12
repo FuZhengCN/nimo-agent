@@ -1,6 +1,6 @@
 import os
 import yaml
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 class ConfigError(Exception):
@@ -30,9 +30,15 @@ class TapdConfig:
 
 
 @dataclass
+class TortoiseSvnConfig:
+    paths: dict[str, str] = field(default_factory=dict)  # 项目名 → 工作副本路径
+
+
+@dataclass
 class Config:
     llm: LLMConfig
     tapd: TapdConfig
+    tortoisesvn: TortoiseSvnConfig = field(default_factory=TortoiseSvnConfig)
 
 
 def _env_override(key: str, default: str) -> str:
@@ -81,4 +87,10 @@ def load_config(path: str = "config.yaml") -> Config:
         company_id=tapd_raw.get("company_id", ""),
         owner=tapd_raw.get("owner", ""),
     )
-    return Config(llm=llm, tapd=tapd)
+    ts_raw = raw.get("tortoisesvn", {})
+    paths = ts_raw.get("paths", {})
+    # 兼容旧字段 wc_path
+    if "wc_path" in ts_raw and not paths:
+        paths["default"] = ts_raw["wc_path"]
+    tortoisesvn = TortoiseSvnConfig(paths=paths)
+    return Config(llm=llm, tapd=tapd, tortoisesvn=tortoisesvn)

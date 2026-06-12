@@ -37,7 +37,9 @@ EXAMPLE_TIPS = [
     "\"帮我看看有哪些项目\"",
     "\"创建一个需求：修复登录bug\"",
     "\"给任务1001填4小时工时\"",
-    "\"当前有哪些活跃的迭代？\"",
+    "\"看看今天的代码提交记录\"",
+    "\"最近谁改过 main.c？\"",
+    "\"更新工作副本到最新版本\"",
 ]
 
 
@@ -102,7 +104,7 @@ def _build_left_panel(model: str, cwd: str, left_w: int) -> list[str]:
     lines.append(" " * left_w)
     welcome = _color_text("Welcome to Nimo!", "1")
     lines.append(_pad_visible(welcome, left_w, "center"))
-    desc = f"\033[2m通过自然语言操作 TAPD 的 AI 助手{RESET}"
+    desc = f"\033[2mTAPD · SVN{RESET}"
     lines.append(_pad_visible(desc, left_w, "center"))
     lines.append(" " * left_w)
     for logo_line in NIMO_LOGO:
