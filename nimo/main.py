@@ -5,6 +5,8 @@ import warnings
 
 warnings.filterwarnings("ignore", message=".*Pydantic V1.*", module="openai.*")
 
+from openai import AuthenticationError
+
 from nimo.config import Config, load_config
 from nimo.agent import Agent
 from nimo.display import print_welcome, print_response_box
@@ -87,6 +89,9 @@ async def main() -> None:
         except KeyboardInterrupt:
             agent.save_history()
             print("\n已取消，输入 /exit 退出")
+        except AuthenticationError:
+            logger.exception("API Key 认证失败")
+            print(f"\n\033[91mAPI Key 无效，请检查 config.yaml 中的 api_key 是否正确\033[0m")
         except Exception:
             logging.getLogger(__name__).exception("未预期的错误")
             print(f"\n\033[91m发生错误，请重试\033[0m")
