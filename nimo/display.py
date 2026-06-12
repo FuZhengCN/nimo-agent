@@ -150,8 +150,8 @@ _CONTENT_THEME = Theme({
 })
 
 
-def print_response_box(text: str, token_summary: str | None = None) -> None:
-    """以 rich Markdown 渲染 LLM 回复，仅上下边框。"""
+def print_response_box(text: str, token_summary: str | None = None, tool_counts: dict[str, int] | None = None) -> None:
+    """以 rich Markdown 渲染 LLM 回复，仅上下边框。顶部右侧展示工具调用信息。"""
     term_w = _get_term_width()
     box_w = term_w - 4
 
@@ -159,7 +159,18 @@ def print_response_box(text: str, token_summary: str | None = None) -> None:
     Console(file=buf, width=box_w - 2, force_terminal=True, theme=_CONTENT_THEME).print(Markdown(text))
     rendered = buf.getvalue().rstrip("\n")
 
-    top = f"{CYAN}╭─ Nimo {'─' * (box_w - 9)}╮{RESET}"
+    # 顶部边框：左侧 "╭─ Nimo "，右侧可选工具标签，最右 "╮"
+    tool_tag = ""
+    if tool_counts:
+        parts = []
+        for name, count in sorted(tool_counts.items()):
+            short = name.replace("tapd_cli", "tapd").replace("_", " ")
+            parts.append(f"{short} x {count}" if count > 1 else short)
+        tool_tag = f" {GRAY}{', '.join(parts)}{RESET} "
+    tag_vis = _display_width(tool_tag) if tool_tag else 0
+    # ╭─ Nimo  = 8 visible，╮ = 1 → dash_len = box_w - 9 - tag_vis
+    dash_len = max(0, box_w - 9 - tag_vis)
+    top = f"{CYAN}╭─ Nimo {'─' * dash_len}{tool_tag}{CYAN}╮{RESET}"
     if token_summary:
         dash_count = max(0, box_w - 4 - len(token_summary))
         bottom = f"{CYAN}╰{'─' * dash_count} {GRAY}{token_summary}{CYAN} ╯{RESET}"

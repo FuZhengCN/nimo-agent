@@ -57,6 +57,7 @@ class Agent:
 
         self._recent_calls: list[tuple[str, str]] = []
         self._last_usage: dict[str, int] | None = None
+        self._last_tool_counts: dict[str, int] | None = None
 
     def _load_system_prompt(self) -> str:
         prompt_path = Path(__file__).resolve().parent / "prompts" / "system.md"
@@ -122,6 +123,10 @@ class Agent:
     def last_usage(self) -> dict[str, int] | None:
         return self._last_usage
 
+    @property
+    def last_tool_counts(self) -> dict[str, int] | None:
+        return self._last_tool_counts
+
     async def run(self, user_input: str) -> str:
         self._history.add({"role": "user", "content": user_input})
         trimmed = self._history.get_trimmed()
@@ -133,6 +138,7 @@ class Agent:
         ctx = self._profile.to_context()
         self._recent_calls.clear()
         usage = {"prompt": 0, "completion": 0}
+        tool_counts: dict[str, int] = {}
 
         # 未压缩的工具结果起始位置
         last_tool_end = len(self._history._messages)
@@ -150,6 +156,7 @@ class Agent:
             except LLMError as e:
                 msg = f"LLM 调用失败：{e}"
                 self._history.add({"role": "assistant", "content": msg})
+                self._last_tool_counts = tool_counts or None
                 return msg
 
             if response.usage:
@@ -162,8 +169,14 @@ class Agent:
             if not message.tool_calls:
                 self._history.add({"role": "assistant", "content": message.content or ""})
                 self._last_usage = usage
+                self._last_tool_counts = tool_counts or None
                 self._compact_tool_results(last_tool_end)
                 return message.content or ""
+
+            # 统计本轮工具调用
+            for tc in message.tool_calls:
+                name = tc.function.name
+                tool_counts[name] = tool_counts.get(name, 0) + 1
 
             # LLM 已消化上一轮工具结果，压缩它们再追加新结果
             current_end = len(self._history._messages)
@@ -197,6 +210,7 @@ class Agent:
                     msg = "检测到重复工具调用，已自动终止。请换个方式描述你的需求。"
                     self._history.add({"role": "assistant", "content": msg})
                     self._last_usage = usage
+                    self._last_tool_counts = tool_counts or None
                     self._compact_tool_results(last_tool_end)
                     return msg
 
@@ -210,6 +224,7 @@ class Agent:
                 })
 
         self._last_usage = usage
+        self._last_tool_counts = tool_counts or None
         self._compact_tool_results(last_tool_end)
         return "已达到最大工具调用轮数，操作未完成。"
 

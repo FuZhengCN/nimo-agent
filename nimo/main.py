@@ -82,7 +82,7 @@ async def main() -> None:
                 def _fmt(n: int) -> str:
                     return f"{n/1000:.1f}k" if n >= 1000 else str(n)
                 token_str = f"P:{_fmt(usage['prompt'])} C:{_fmt(usage['completion'])}"
-            print_response_box(response, token_summary=token_str)
+            print_response_box(response, token_summary=token_str, tool_counts=agent.last_tool_counts)
             print()
         except KeyboardInterrupt:
             agent.save_history()
