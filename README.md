@@ -19,7 +19,7 @@ CLI AI Agent，基于 DeepSeek function calling，通过自然语言对话完成
 ## 安装
 
 ```bash
-git clone <repo-url> && cd Nimo
+git clone https://github.com/FuZhengCN/nimo-agent.git && cd Nimo
 pip install -e ".[dev]"
 ```
 
