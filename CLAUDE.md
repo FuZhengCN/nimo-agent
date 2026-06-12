@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-Nimo 是一个 CLI AI Agent，基于 DeepSeek function calling。用户通过自然语言对话执行 TAPD 操作（查项目、需求/任务/缺陷 CRUD、填工时、评论、迭代等）。项目目标是实践 AI Agent 开发。
+Nimo 是一个 CLI AI Agent，基于 DeepSeek function calling。用户通过自然语言对话执行 TAPD 操作（查项目、需求/任务/缺陷 CRUD、填工时、评论、迭代等）和 SVN 版本控制（查日志、差异对比、更新提交等）。项目目标是实践 AI Agent 开发。
 
 ## 项目规则
 
@@ -44,7 +44,8 @@ main.py → agent.py → llm/client.py
         → config.py
         → display.py
         → tools/__init__.py (pkgutil 自动发现工具模块)
-            → tools/tapd.py (@register_tool 注册)
+            → tools/tapd.py (@register_tool 注册，外部 tapd.exe)
+            → tools/tortoisesvn.py (@register_tool 注册，外部 svn.exe/svnadmin.exe)
 ```
 
 `main()` 先 `load_config()`，再 `build_agent(config)` + `print_welcome()`，最后进入输入循环。`build_agent()` 调用 `ToolRegistry.init_all(config)` 执行各工具的初始化函数，再构造 `Agent`。
@@ -84,11 +85,21 @@ main.py → agent.py → llm/client.py
 
 ### System Prompt
 
-`nimo/prompts/system.md` 定义 LLM 的行为准则和回复格式（已精简至 ~1100 字符，包含反重复查询规则）。`Agent._load_system_prompt()` 通过 `Path(__file__)` 定位文件，读取后作为 system message 传入每次 LLM 调用。
+`nimo/prompts/system.md` 定义 LLM 的行为准则和回复格式（已精简至 ~1100 字符，包含反重复查询规则）。`Agent._load_system_prompt()` 通过 `Path(__file__)` 定位文件，读取后追加当前日期（`YYYY年M月D日 星期X`）和可用工具列表，作为 system message 传入每次 LLM 调用。
 
 ### 外部二进制
 
-项目 `bin/tapd.exe`（来自 [tapd-ai-cli](https://github.com/studyzy/tapd-ai-cli)，不入 git）。`tapd_cli` 工具通过 `_TAPD_BIN`（相对模块路径自动定位）调用该二进制，认证信息通过环境变量 `TAPD_ACCESS_TOKEN` 注入。换机器只需从 GitHub Release 下载 `tapd.exe` 放到 `bin/` 目录。
+`bin/` 目录存放工具依赖的可执行文件（均不入 git）：
+
+| 文件 | 来源 | 用途 |
+|------|------|------|
+| `tapd.exe` | [tapd-ai-cli](https://github.com/studyzy/tapd-ai-cli) | TAPD 命令行操作 |
+| `svn.exe` | Apache Subversion | SVN 命令行（log/diff/blame/update/commit 等） |
+| `svnadmin.exe` | Apache Subversion | 创建 SVN 仓库（repocreate 命令） |
+
+工具模块通过 `Path(__file__).resolve().parent.parent.parent / "bin" / "xxx.exe"` 自动定位，不依赖系统 PATH。换机器只需将对应的 exe 放到 `bin/` 目录。
+
+认证：tapd 通过 `TAPD_ACCESS_TOKEN` 环境变量注入，svn 复用 Windows 系统级 TortoiseSVN 凭据缓存（`%APPDATA%\Subversion\auth\`）。
 
 ### 核心模块职责
 
@@ -100,8 +111,9 @@ main.py → agent.py → llm/client.py
 | `memory/profile.py` | `UserProfile` 结构化长期记忆（`dict[str,str]` 键值对），独立于滑动窗口，`~/.nimo/profile.json` 持久化；Agent 在 trim 时调 LLM 提取事实（`_maybe_extract_profile()`），注入到每条消息头部 `[用户信息]` |
 | `tools/registry.py` | `ToolRegistry` 单例 + `@register_tool` 装饰器 + `register_init()`/`init_all()` 通用初始化机制；`reset()` 用于测试隔离 |
 | `tools/tapd.py` | `init_tapd()` 存储配置；唯一工具 `tapd_cli` 调用外部 `tapd.exe` 二进制；`_validate_args()` 子命令白名单 + 路径遍历校验防止 prompt 注入 |
-| `config.py` | `load_config()` 加载 YAML + `_env_override()` 环境变量覆盖（`LLM_API_KEY`、`TAPD_ACCESS_TOKEN`） |
-| `display.py` | `print_welcome(model, cwd, version)` 启动欢迎画面（24bit ANSI 真彩色，6:4 双栏）；`print_response_box(text, token_summary)` 用 `rich.Markdown` + 无色 Theme 渲染回复，仅上下品牌色边框，token 显示在底边框右侧（`P:X C:Y` 格式）；Theme 模块级常量避免每次重建 |
+| `config.py` | `load_config()` 加载 YAML + `_env_override()` 环境变量覆盖（`LLM_API_KEY`、`TAPD_ACCESS_TOKEN`）；`TortoiseSvnConfig` 支持多项目别名（paths dict + 单项目自动匹配） |
+| `display.py` | `print_welcome(model, cwd, version)` 启动欢迎画面（24bit ANSI 真彩色，6:4 双栏）；`print_response_box(text, token_summary, tool_counts)` 用 `rich.Markdown` + 无色 Theme 渲染回复，仅上下品牌色边框，右上角展示工具调用统计，token 显示在底边框右侧（`P:X C:Y` 格式）；Theme 模块级常量避免每次重建 |
+| `tools/tortoisesvn.py` | `init_tortoisesvn()` 存储配置并注入项目名到工具描述；`svn` 工具参数含 command/path/project/url/extra_args；`_resolve_path()` 三级优先级（显式 path > 项目名 > 单项目自动匹配 > 报错）；`_validate_args()` 命令白名单 + 路径遍历防护；svn 命令用 `svn.exe`，repocreate 用 `svnadmin.exe`；输出自动 GBK/UTF-8 双编码解码 |
 
 ### 配置
 
@@ -125,9 +137,21 @@ tapd:
 
 `tapd.nick`、`tapd.company_id`、`tapd.owner` 为可选字段。
 
+`tortoisesvn` 段完全可选，用项目别名管理多个工作副本：
+
+```yaml
+tortoisesvn:
+  paths:
+    harmony: 'C:\Users\user\source\HarmonyOS'
+    confsdk: 'C:\Users\user\source\Confsdk_Daily'
+```
+
+单项目时自动匹配无需指定 project 参数，多项目时需 LLM 传 project 选择。旧字段 `wc_path` 兼容自动转为 `paths.default`。
+
 ### 测试
 
 - **Agent 循环**通过 mock `LLMClient.chat` 和 `ToolRegistry.execute` 测试，覆盖正常路径及 JSON 解析失败、系统提示文件缺失等错误路径
 - **单例 Registry**测试通过 `reset()` 保证隔离
 - **TAPD 工具测试**在模块级 import（`@register_tool` 只触发一次），mock `asyncio.create_subprocess_exec` 验证 CLI 调用；`_validate_args()` 校验逻辑单独测试
+- **SVN 工具测试**同样模式 mock `asyncio.create_subprocess_exec`；覆盖多项目、单项目自动匹配、显式 path 优先级、无配置报错；`_resolve_path()` 和 `_build_args()` 独立测试
 - **Display 模块**测试覆盖常量、ANSI 颜色、边框宽度、行构建、`print_welcome` 端到端输出；`sys.stdout` 操作用 `try/finally` 保护
