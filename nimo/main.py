@@ -1,3 +1,4 @@
+import argparse
 import asyncio
 import logging
 import os
@@ -27,6 +28,10 @@ async def build_agent(config: Config) -> Agent:
 
 
 async def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--acp", action="store_true", help="以 ACP 模式运行（JSON-RPC over stdin/stdout）")
+    args, _ = parser.parse_known_args()
+
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -35,6 +40,12 @@ async def main() -> None:
     logging.getLogger("openai").setLevel(logging.WARNING)
     config = load_config()
     agent = await build_agent(config)
+
+    if args.acp:
+        from nimo.acp_server import AcpServer
+        await AcpServer(agent).run()
+        return
+
     print_welcome(model=config.llm.model, cwd=os.getcwd(), version="0.1.0")
     while True:
         try:
