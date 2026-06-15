@@ -86,6 +86,7 @@ async def test_handle_session_prompt_invalid_session(server):
     assert result["id"] == 5
     assert result["error"]["code"] == -32602
     assert "Invalid session" in result["error"]["message"]
+    assert "result" not in result
 
 
 @pytest.mark.asyncio
@@ -112,7 +113,7 @@ async def test_process_buffer_complete_message(server):
         remainder = await server._process_buffer(wire)
         assert remainder == b""
         mock_write.assert_called_once()
-        written = json.loads(mock_write.call_args[0][0])
+        written = mock_write.call_args[0][0]
         assert written["result"]["agentInfo"]["name"] == "nimo"
 
 
@@ -152,6 +153,45 @@ async def test_process_buffer_two_messages(server):
 
 
 @pytest.mark.asyncio
+async def test_handle_session_prompt_empty_blocks(server):
+    sid = str(uuid.uuid4())
+    server._sessions[sid] = "/test"
+
+    await server._handle_session_prompt(7, {
+        "sessionId": sid,
+        "prompt": [],
+    })
+
+    server._agent.run.assert_called_once_with(" ")
+
+
+@pytest.mark.asyncio
+async def test_dispatch_prompt_agent_exception(server):
+    sid = str(uuid.uuid4())
+    server._sessions[sid] = "/test"
+    server._agent.run = AsyncMock(side_effect=RuntimeError("模拟异常"))
+
+    result = await server._dispatch({
+        "jsonrpc": "2.0",
+        "id": 8,
+        "method": "session/prompt",
+        "params": {
+            "sessionId": sid,
+            "prompt": [{"type": "text", "text": "test"}],
+        },
+    })
+
+    assert result["error"]["code"] == -32603
+
+
+def test_handle_session_new_without_cwd(server):
+    result = server._handle_session_new(9, {})
+
+    sid = result["result"]["sessionId"]
+    assert server._sessions[sid] == ""
+
+
+@pytest.mark.asyncio
 async def test_process_buffer_parse_error(server):
     body = "not valid json{{{{"
     header = f"Content-Length: {len(body.encode('utf-8'))}\r\n\r\n"
@@ -161,5 +201,5 @@ async def test_process_buffer_parse_error(server):
         remainder = await server._process_buffer(wire)
         assert remainder == b""
         mock_write.assert_called_once()
-        written = json.loads(mock_write.call_args[0][0])
+        written = mock_write.call_args[0][0]
         assert written["error"]["code"] == -32700
