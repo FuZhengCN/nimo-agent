@@ -48,8 +48,6 @@ class AcpServer:
             buffer = buffer[body_end:]
             try:
                 msg = json.loads(body)
-            except json.JSONDecodeError:
-                self._write_error(None, -32700, "Parse error")
             except Exception:
                 self._write_error(None, -32700, "Parse error")
             else:
@@ -83,6 +81,8 @@ class AcpServer:
                 return self._handle_session_new(msg_id, params)
             elif method == "session/prompt":
                 return await self._handle_session_prompt(msg_id, params)
+            elif msg_id is None:
+                return None  # Notification: silently ignored per JSON-RPC 2.0 spec
             else:
                 return {
                     "jsonrpc": "2.0",
@@ -91,6 +91,8 @@ class AcpServer:
                 }
         except Exception as e:
             logger.exception("Handler error for method: %s", method)
+            if msg_id is None:
+                return None
             return {
                 "jsonrpc": "2.0",
                 "id": msg_id,
