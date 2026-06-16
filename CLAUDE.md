@@ -43,7 +43,7 @@ main.py → agent.py → llm/client.py
                    → tools/registry.py
         → config.py
         → display.py
-        → acp_server.py (ACP JSON-RPC 模式，--acp 参数启动)
+
         → tools/__init__.py (pkgutil 自动发现工具模块)
             → tools/tapd.py (@register_tool 注册，外部 tapd.exe)
             → tools/tortoisesvn.py (@register_tool 注册，外部 svn.exe/svnadmin.exe)
@@ -108,7 +108,7 @@ main.py → agent.py → llm/client.py
 | 模块 | 关键设计 |
 |------|---------|
 | `agent.py` | `Agent.run()` 编排循环：LLM 调用捕获 `LLMError` 防崩溃、`asyncio.gather` 并行执行工具 + 120s 超时、连续 3 次相同调用自动终止；轮数耗尽时最后调一次 LLM（tools=[]）基于已有数据总结，不再直接报错；`_trimmed_llm_call()` 复用；Profile 上下文循环外注入；`last_usage` 属性暴露 token 统计 |
-| `acp_server.py` | `AcpServer` 实现 ACP JSON-RPC 2.0 协议（Content-Length 头帧格式），支持 `initialize`/`session/new`/`session/prompt` 三个方法，通过 stdin/stdout 与 IDE 通信。`main.py --acp` 启动此模式替代交互式循环 |
+
 | `llm/client.py` | `LLMClient.chat()` 封装 DeepSeek（兼容 OpenAI SDK），4次尝试（1+3重试），仅对 RateLimitError/APITimeoutError/InternalServerError 重试 |
 | `memory/history.py` | `ConversationHistory` 滑动窗口截断 + `_trimmed_buffer` 暂存被 trim 消息 + `get_trimmed()`/`pop_trimmed()` 分离 peek/pop 语义；`from_dict()` 恢复后自动 `_trim()` 确保加载即裁剪；`save()` 原子写入（.tmp → .json 防损坏）；JSON 文件持久化（`~/.nimo/sessions/`） |
 | `memory/profile.py` | `UserProfile` 结构化长期记忆（`dict[str,str]` 键值对），独立于滑动窗口，`~/.nimo/profile.json` 持久化；Agent 在 trim 时调 LLM 提取事实（`_maybe_extract_profile()`），注入到每条消息头部 `[用户信息]` |
