@@ -43,6 +43,7 @@ main.py → agent.py → llm/client.py
                    → tools/registry.py
         → config.py
         → display.py
+        → acp_server.py (ACP JSON-RPC 模式，--acp 参数启动)
         → tools/__init__.py (pkgutil 自动发现工具模块)
             → tools/tapd.py (@register_tool 注册，外部 tapd.exe)
             → tools/tortoisesvn.py (@register_tool 注册，外部 svn.exe/svnadmin.exe)
@@ -57,20 +58,21 @@ main.py → agent.py → llm/client.py
   ↓
 ┌─ for round in 1..max_tool_rounds:
 │   LLM.chat(messages, tools, system_prompt)
-│   ├─ 无 tool_calls → 压缩剩余工具结果，返回文本
-│   └─ 有 tool_calls → 压缩上一轮工具结果 → 循环检测(3次相同停止)
+│   ├─ 无 tool_calls → 返回文本
+│   └─ 有 tool_calls → 循环检测(3次相同停止)
 │                     → asyncio.gather 并行执行（120s超时）
 │                     → 结果截断(>4000字符)加入历史 → 继续循环
-└─ 超限 → 返回错误提示
+└─ 超限 → 最后一次 LLM 调用（tools=[]）基于已有数据总结回答
 ```
 
-运行时回复通过 `rich.Markdown` 渲染，底边框显示 `P:X C:Y` token 消耗（prompt/completion 分列）。每轮 LLM tool_calls 返回后，`_compact_tool_results()` 立即将**上一轮**的工具结果替换为短摘要（`[工具名 返回 X 字符]`），当前轮结果保留完整供下一轮 LLM 理解。最终回复或超限时将最后一轮结果也压缩。
+工具结果**不再压缩**——每轮返回的完整 JSON 原样保留在历史中，让 LLM 在后续轮次充分理解上下文。轮数耗尽时不直接返回错误，而是额外调一次不带 tools 的 LLM，让它基于已获取的所有数据给出最佳回答。
 
 **内置命令**（`main.py` 输入循环中直接处理，不走 Agent）：
 
 | 命令 | 行为 |
 |------|------|
 | `/help` | 显示可用命令与用法示例 |
+| `/chain` | 从消息历史提取上一轮工具调用链并格式化输出 |
 | `/clear` | 调用 `agent.clear_history()` 清空内存消息并删除持久化文件 |
 | `/clear-profile` | 调用 `agent.clear_profile()` 清空长期用户档案 |
 | `/exit` | 调用 `agent.save_history()` 落盘后退出 |
@@ -105,12 +107,13 @@ main.py → agent.py → llm/client.py
 
 | 模块 | 关键设计 |
 |------|---------|
-| `agent.py` | `Agent.run()` 编排循环：LLM 调用捕获 `LLMError` 防崩溃、`asyncio.gather` 并行执行工具 + 120s 超时 + 结果超 4000 字符截断、连续 3 次相同调用自动终止、逐轮 `_compact_tool_results()` 压缩已消化工具结果（动态 name_map 映射工具名，替代硬编码）；`_trimmed_llm_call()` 复用；Profile 上下文循环外注入；`last_usage` 属性暴露 token 统计 |
+| `agent.py` | `Agent.run()` 编排循环：LLM 调用捕获 `LLMError` 防崩溃、`asyncio.gather` 并行执行工具 + 120s 超时 + 结果超 4000 字符截断、连续 3 次相同调用自动终止；轮数耗尽时最后调一次 LLM（tools=[]）基于已有数据总结，不再直接报错；`_trimmed_llm_call()` 复用；Profile 上下文循环外注入；`last_usage` 属性暴露 token 统计 |
+| `acp_server.py` | `AcpServer` 实现 ACP JSON-RPC 2.0 协议（Content-Length 头帧格式），支持 `initialize`/`session/new`/`session/prompt` 三个方法，通过 stdin/stdout 与 IDE 通信。`main.py --acp` 启动此模式替代交互式循环 |
 | `llm/client.py` | `LLMClient.chat()` 封装 DeepSeek（兼容 OpenAI SDK），4次尝试（1+3重试），仅对 RateLimitError/APITimeoutError/InternalServerError 重试 |
 | `memory/history.py` | `ConversationHistory` 滑动窗口截断 + `_trimmed_buffer` 暂存被 trim 消息 + `get_trimmed()`/`pop_trimmed()` 分离 peek/pop 语义；`from_dict()` 恢复后自动 `_trim()` 确保加载即裁剪；`save()` 原子写入（.tmp → .json 防损坏）；JSON 文件持久化（`~/.nimo/sessions/`） |
 | `memory/profile.py` | `UserProfile` 结构化长期记忆（`dict[str,str]` 键值对），独立于滑动窗口，`~/.nimo/profile.json` 持久化；Agent 在 trim 时调 LLM 提取事实（`_maybe_extract_profile()`），注入到每条消息头部 `[用户信息]` |
 | `tools/registry.py` | `ToolRegistry` 单例 + `@register_tool` 装饰器 + `register_init()`/`init_all()` 通用初始化机制；`reset()` 用于测试隔离 |
-| `tools/tapd.py` | `init_tapd()` 存储配置；唯一工具 `tapd_cli` 调用外部 `tapd.exe` 二进制；`_validate_args()` 子命令白名单 + 路径遍历校验防止 prompt 注入 |
+| `tools/tapd.py` | `init_tapd()` 存储配置；唯一工具 `tapd_cli` 调用外部 `tapd.exe` 二进制；`timesheet list` 自动追加 `--limit 200` 防截断；`_validate_args()` 子命令白名单 + 路径遍历校验防止 prompt 注入；**关键**：按人员查工时须用 `--owner <中文显示名>`，不可用 `--filter username=` |
 | `config.py` | `load_config()` 加载 YAML + `_env_override()` 环境变量覆盖（`LLM_API_KEY`、`TAPD_ACCESS_TOKEN`）；`TortoiseSvnConfig` 支持多项目别名（paths dict + 单项目自动匹配） |
 | `display.py` | `print_welcome(model, cwd, version)` 启动欢迎画面（24bit ANSI 真彩色，6:4 双栏）；`print_response_box(text, token_summary, tool_counts)` 用 `rich.Markdown` + 无色 Theme 渲染回复，仅上下品牌色边框，右上角展示工具调用统计，token 显示在底边框右侧（`P:X C:Y` 格式）；Theme 模块级常量避免每次重建 |
 | `tools/tortoisesvn.py` | `init_tortoisesvn()` 存储配置并注入项目名到工具描述；`svn` 工具参数含 command/path/project/url/extra_args；`_resolve_path()` 三级优先级（显式 path > 项目名 > 单项目自动匹配 > 报错）；`_validate_args()` 命令白名单 + 路径遍历防护；svn 命令用 `svn.exe`，repocreate 用 `svnadmin.exe`；输出自动 GBK/UTF-8 双编码解码 |
