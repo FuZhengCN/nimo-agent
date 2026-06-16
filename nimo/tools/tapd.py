@@ -43,7 +43,7 @@ async def init_tapd(config: Config) -> None:
 
 @register_tool(
     name="tapd_cli",
-    description="通过 tapd CLI 执行 TAPD 操作。可用子命令：workspace list|switch|info / story|task|bug list|show|create|update|count|todo / timesheet list|add / iteration list|create|update / comment list|add / wiki list|show / launch list / workflow transitions|status-map / url <tapd-url> 等等。项目ID通过 --workspace-id 指定。返回 JSON。使用规则：1) 查单个任务/需求/缺陷详情用 show <id>，不要用 list --filter 的 | 拼接多个 ID（仅返回第一条）；2) 按人员查工时/任务时，必须先 workspace list 拉全部项目，然后逐个查，严禁主观挑选部分项目，如需缩小范围让用户确认；3) timesheet list 按人员筛选必须用 --owner <中文显示名>（如 --owner 傅政），禁止用 --filter username= 或 --filter owner=，--filter 的 & 串联不生效且字段名不对。",
+    description="通过 tapd CLI 执行 TAPD 操作。可用子命令：workspace list|switch|info / story|task|bug list|show|create|update|count|todo / timesheet list|add / iteration list|create|update / comment list|add / wiki list|show / launch list / workflow transitions|status-map / url <tapd-url> 等等。项目ID通过 --workspace-id 指定。返回 JSON。使用规则：1) 查单个任务/需求/缺陷详情用 show <id>，不要用 list --filter 的 | 拼接多个 ID（仅返回第一条）；2) 按人员查工时/任务时，必须先 workspace list 拉全部项目，然后逐个查，严禁主观挑选部分项目，如需缩小范围让用户确认；3) timesheet list 按人员筛选必须用 --owner <中文显示名>（如 --owner 傅政），禁止用 --filter username= 或 --filter owner=，--filter 的 & 串联不生效且字段名不对；4) 填工时智能搜索：用户指定任务名称但无 ID 时，先拉全部任务按名称匹配，日期自动用当天，备注为可选字段。",
     parameters={
         "type": "object",
         "properties": {
