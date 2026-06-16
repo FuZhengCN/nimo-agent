@@ -1,6 +1,8 @@
 import asyncio
 import json
 import logging
+import time
+from collections.abc import Callable
 from pathlib import Path
 from nimo.config import Config
 from nimo.llm.client import LLMClient, LLMError
@@ -58,6 +60,7 @@ class Agent:
         self._recent_calls: list[tuple[str, str]] = []
         self._last_usage: dict[str, int] | None = None
         self._last_tool_counts: dict[str, int] | None = None
+        self._last_timings: list[dict] = []
 
     def _load_system_prompt(self) -> str:
         from datetime import date
@@ -131,7 +134,7 @@ class Agent:
     def last_tool_counts(self) -> dict[str, int] | None:
         return self._last_tool_counts
 
-    async def run(self, user_input: str) -> str:
+    async def run(self, user_input: str, on_progress: Callable[[str], None] | None = None) -> str:
         self._history.add({"role": "user", "content": user_input})
         trimmed = self._history.get_trimmed()
         await self._maybe_summarize_trimmed(trimmed)
@@ -143,14 +146,15 @@ class Agent:
         self._recent_calls.clear()
         usage = {"prompt": 0, "completion": 0}
         tool_counts: dict[str, int] = {}
+        timings: list[dict] = []
 
-        # 未压缩的工具结果起始位置
-        last_tool_end = len(self._history._messages)
-
-        for _ in range(max_rounds):
+        for round_num in range(1, max_rounds + 1):
             messages = self._history.get_messages()
             if ctx:
                 messages.insert(0, {"role": "system", "content": ctx})
+            if on_progress:
+                on_progress("分析中...")
+            t0 = time.monotonic()
             try:
                 response = await self._llm_client.chat(
                     messages=messages,
@@ -161,7 +165,10 @@ class Agent:
                 msg = f"LLM 调用失败：{e}"
                 self._history.add({"role": "assistant", "content": msg})
                 self._last_tool_counts = tool_counts or None
+                self._last_timings = timings
                 return msg
+
+            llm_time = time.monotonic() - t0
 
             if response.usage:
                 usage["prompt"] += response.usage.prompt_tokens
@@ -171,21 +178,17 @@ class Agent:
             message = choice.message
 
             if not message.tool_calls:
+                timings.append({"round": round_num, "llm_time": llm_time, "tool_time": 0, "tools": []})
                 self._history.add({"role": "assistant", "content": message.content or ""})
                 self._last_usage = usage
                 self._last_tool_counts = tool_counts or None
-                self._compact_tool_results(last_tool_end)
+                self._last_timings = timings
                 return message.content or ""
 
             # 统计本轮工具调用
             for tc in message.tool_calls:
                 name = tc.function.name
                 tool_counts[name] = tool_counts.get(name, 0) + 1
-
-            # LLM 已消化上一轮工具结果，压缩它们再追加新结果
-            current_end = len(self._history._messages)
-            self._compact_tool_results(last_tool_end, current_end)
-            last_tool_end = current_end
 
             # 有工具调用：记录到历史
             self._history.add({
@@ -215,11 +218,30 @@ class Agent:
                     self._history.add({"role": "assistant", "content": msg})
                     self._last_usage = usage
                     self._last_tool_counts = tool_counts or None
-                    self._compact_tool_results(last_tool_end)
+                    self._last_timings = timings
                     return msg
 
             # 并行执行所有工具调用
+            if on_progress:
+                tool_names = [tc.function.name for tc in message.tool_calls]
+                if len(tool_names) == 1:
+                    on_progress(f"执行工具: {tool_names[0]}...")
+                else:
+                    on_progress(f"执行 {len(tool_names)} 个工具...")
+            t2 = time.monotonic()
             results = await self._execute_tool_calls(message.tool_calls)
+            tool_time = time.monotonic() - t2
+
+            tools_this_round = [
+                {"name": tc.function.name, "args": tc.function.arguments}
+                for tc in message.tool_calls
+            ]
+            timings.append({
+                "round": round_num,
+                "llm_time": llm_time,
+                "tool_time": tool_time,
+                "tools": tools_this_round,
+            })
             for tc_id, content in results:
                 self._history.add({
                     "role": "tool",
@@ -227,48 +249,29 @@ class Agent:
                     "content": content,
                 })
 
+        # 轮数耗尽，最后调一次 LLM 基于已有数据给出最佳回答
+        t_final = time.monotonic()
+        try:
+            messages = self._history.get_messages()
+            messages.insert(0, {"role": "system", "content": "已达到工具调用上限。请基于已获取的所有数据，尽最大努力回答用户的问题。如果数据不完整，如实说明哪些信息缺失，不要编造数据。"})
+            response = await self._llm_client.chat(
+                messages=messages,
+                tools=[],
+                system_prompt=self._system_prompt,
+            )
+            if response.usage:
+                usage["prompt"] += response.usage.prompt_tokens
+                usage["completion"] += response.usage.completion_tokens
+            answer = (response.choices[0].message.content or "").strip()
+            self._history.add({"role": "assistant", "content": answer})
+        except Exception:
+            logger.warning("轮数耗尽后 LLM 总结调用失败", exc_info=True)
+            answer = "已达到最大工具调用轮数，操作未完成。"
+        timings.append({"round": -1, "llm_time": time.monotonic() - t_final, "tool_time": 0, "tools": []})
         self._last_usage = usage
         self._last_tool_counts = tool_counts or None
-        self._compact_tool_results(last_tool_end)
-        return "已达到最大工具调用轮数，操作未完成。"
-
-    def _compact_tool_results(self, start_idx: int, end_idx: int | None = None) -> None:
-        """将工具结果替换为紧凑摘要，LLM 已消化数据后不再保留原始 JSON。"""
-        end = end_idx if end_idx is not None else len(self._history._messages)
-        # 第一遍：收集 tool_call_id → 工具名 映射
-        name_map: dict[str, str] = {}
-        for i in range(start_idx, end):
-            m = self._history._messages[i]
-            if m["role"] == "assistant" and m.get("tool_calls"):
-                for tc in m["tool_calls"]:
-                    name_map[tc["id"]] = tc["function"]["name"]
-
-        for i in range(start_idx, end):
-            msg = self._history._messages[i]
-            if msg["role"] != "tool":
-                continue
-            try:
-                data = json.loads(msg["content"])
-            except (json.JSONDecodeError, TypeError):
-                continue
-            tool_name = name_map.get(msg.get("tool_call_id", ""), "未知工具")
-            if not data.get("success"):
-                msg["content"] = json.dumps({
-                    "success": False, "error": data.get("error", "未知错误"),
-                }, ensure_ascii=False)
-                continue
-            raw = data.get("data", "")
-            if isinstance(raw, str) and len(raw) > 200:
-                summary = f"[{tool_name} 返回 {len(raw)} 字符]"
-            elif isinstance(raw, list):
-                summary = f"[{tool_name} 返回 {len(raw)} 条记录]"
-            elif isinstance(raw, dict):
-                summary = f"[{tool_name} 返回 {len(raw)} 个字段]"
-            else:
-                summary = f"[{tool_name} 执行成功]"
-            msg["content"] = json.dumps({
-                "success": True, "summary": summary,
-            }, ensure_ascii=False)
+        self._last_timings = timings
+        return answer
 
     async def _execute_tool_calls(self, tool_calls: list) -> list[tuple[str, str]]:
         """并行执行工具调用，返回 [(tool_call_id, content), ...]，保持原始顺序。"""
@@ -297,8 +300,6 @@ class Agent:
                 "data": result.data,
                 "error": result.error,
             }, ensure_ascii=False, default=str)
-            if len(content) > 4000:
-                content = content[:4000] + "...[结果过长已截断]"
             return tc_id, content
 
         tasks = [

@@ -22,6 +22,147 @@ ORANGE = "\033[38;2;242;138;56m"
 RESET = "\033[0m"
 
 
+import json
+
+
+def _format_chain(agent: Agent) -> str:
+    """从消息历史中提取上一轮工具调用链并格式化输出，含每轮耗时。"""
+    timings = agent._last_timings
+    msgs = agent._history._messages
+
+    if not msgs:
+        return "暂无对话历史。"
+
+    last_user_idx = None
+    for i in range(len(msgs) - 1, -1, -1):
+        if msgs[i]["role"] == "user":
+            last_user_idx = i
+            break
+    if last_user_idx is None:
+        return "暂无用户消息。"
+
+    # 收集 tool_call_id → 工具名和参数
+    tc_map: dict[str, dict] = {}
+    for i in range(last_user_idx, len(msgs)):
+        m = msgs[i]
+        if m["role"] == "assistant" and m.get("tool_calls"):
+            for tc in m["tool_calls"]:
+                try:
+                    args = json.loads(tc["function"]["arguments"])
+                except (json.JSONDecodeError, TypeError):
+                    args = tc["function"]["arguments"]
+                tc_map[tc["id"]] = {"name": tc["function"]["name"], "args": args}
+
+    # 收集 tool 结果
+    results: list[dict] = []
+    for i in range(last_user_idx, len(msgs)):
+        m = msgs[i]
+        if m["role"] != "tool":
+            continue
+        tc_id = m.get("tool_call_id", "")
+        info = tc_map.get(tc_id, {"name": "未知工具", "args": ""})
+        result_text = "失败"
+        try:
+            data = json.loads(m["content"])
+            if data.get("success"):
+                raw = data.get("data", "")
+                if isinstance(raw, str):
+                    try:
+                        parsed = json.loads(raw)
+                        if isinstance(parsed, list):
+                            result_text = f"{len(parsed)} 条" if len(parsed) > 0 else "无记录"
+                        elif isinstance(parsed, dict):
+                            result_text = f"{len(parsed)} 字段"
+                        else:
+                            result_text = f"{len(raw)} 字符"
+                    except (json.JSONDecodeError, TypeError):
+                        result_text = f"{len(raw)} 字符"
+                elif isinstance(raw, list):
+                    result_text = f"{len(raw)} 条" if len(raw) > 0 else "无记录"
+                elif isinstance(raw, dict):
+                    result_text = f"{len(raw)} 字段"
+                else:
+                    result_text = "成功"
+            else:
+                result_text = data.get("error", "失败")
+        except (json.JSONDecodeError, TypeError):
+            pass
+        results.append({
+            "name": info["name"],
+            "args": info["args"],
+            "result": result_text,
+        })
+
+    if not results:
+        return "上一轮对话没有工具调用。"
+
+    lines = ["\n🔗 工具调用链\n"]
+
+    result_idx = 0
+    total_llm = 0.0
+    total_tool = 0.0
+    for t in timings:
+        r = t["round"]
+        llm_t = t["llm_time"]
+        tool_t = t["tool_time"]
+        total_llm += llm_t
+        total_tool += tool_t
+        n = len(t["tools"])
+
+        if n == 0:
+            label = "最终回答" if r == -1 else f"第{r}轮"
+            lines.append(f"  {label}  LLM {llm_t:.1f}s")
+            continue
+
+        parallel_hint = f"（{n} 并行）" if n > 1 else ""
+        lines.append(f"  第{r}轮  LLM {llm_t:.1f}s | 工具 {tool_t:.1f}s{parallel_hint}")
+
+        for j in range(n):
+            if result_idx >= len(results):
+                break
+            rr = results[result_idx]
+            call_str = _format_tapd_call(rr["args"])
+            lines.append(f"    {call_str}  →  {rr['result']}")
+            result_idx += 1
+
+        lines.append("")
+
+    total = total_llm + total_tool
+    lines.append(f"  {'─' * 28}")
+    lines.append(f"  LLM {total_llm:.1f}s | 工具 {total_tool:.1f}s | 总计 {total:.1f}s")
+
+    return "\n".join(lines)
+
+
+def _format_tapd_call(args) -> str:
+    """将 tapd_cli 参数格式化为可读的命令行形式。"""
+    if not isinstance(args, dict):
+        return str(args)[:60]
+    argv = args.get("args", [])
+    if not argv:
+        return "tapd_cli"
+    cmd = " ".join(argv[:2])  # e.g. "workspace list", "timesheet list"
+    # 提取关键参数
+    params = []
+    i = 2
+    while i < len(argv):
+        if argv[i].startswith("--"):
+            key = argv[i][2:]  # 去掉 -- 前缀
+            if i + 1 < len(argv) and not argv[i + 1].startswith("--"):
+                val = argv[i + 1]
+                params.append(f"--{key} {val}")
+                i += 2
+            else:
+                params.append(f"--{key}")
+                i += 1
+        else:
+            params.append(argv[i])
+            i += 1
+    if params:
+        return f"{cmd} {' '.join(params)}"
+    return cmd
+
+
 async def build_agent(config: Config) -> Agent:
     await ToolRegistry.get_instance().init_all(config)
     return Agent(config)
@@ -66,9 +207,13 @@ async def main() -> None:
             agent.clear_profile()
             print("用户档案已清除")
             continue
+        if user_input.strip() == "/chain":
+            print(_format_chain(agent))
+            continue
         if user_input.strip() == "/help":
             print("""
 可用命令：
+  /chain         查看上一轮工具调用链
   /help          查看帮助
   /clear         清除当前对话历史
   /clear-profile 清除长期用户档案
@@ -86,9 +231,11 @@ async def main() -> None:
         if not user_input.strip():
             continue
         try:
-            print("\033[90m⏳ 思考中...\033[0m", end="\r")
-            response = await agent.run(user_input)
-            print(" " * 20, end="\r")
+            def _progress(msg: str) -> None:
+                print(f"\033[90m⏳ {msg}\033[0m\033[K", end="\r")
+
+            response = await agent.run(user_input, on_progress=_progress)
+            print(" " * 40, end="\r")
             usage = agent.last_usage
             token_str = None
             if usage:

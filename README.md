@@ -33,7 +33,7 @@ pip install -e ".[dev]"
 llm:
   api_key: "sk-your-deepseek-key"
   base_url: "https://api.deepseek.com"
-  model: "deepseek-chat"
+  model: "deepseek-v4-flash"
   max_tool_rounds: 5
   history_rounds: 10
 

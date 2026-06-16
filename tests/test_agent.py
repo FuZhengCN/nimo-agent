@@ -88,11 +88,14 @@ async def test_agent_stops_at_max_rounds(sample_config):
         make_mock_chat_response(None, tool_calls=[make_tc(i)])
         for i in range(sample_config.llm.max_tool_rounds)
     ]
+    # 最后一轮：轮数耗尽后的总结调用（不带 tools）
+    responses.append(make_mock_chat_response("已获取部分数据，总结如下：..."))
     agent._llm_client.chat = AsyncMock(side_effect=responses)
     agent._registry.execute = AsyncMock(return_value=MagicMock(success=True, data=[]))
 
     response = await agent.run("反复查")
-    assert agent._llm_client.chat.call_count == sample_config.llm.max_tool_rounds
+    assert agent._llm_client.chat.call_count == sample_config.llm.max_tool_rounds + 1
+    assert "已获取部分数据" in response
 
 
 @pytest.mark.asyncio
