@@ -43,14 +43,14 @@ async def init_tapd(config: Config) -> None:
 
 @register_tool(
     name="tapd_cli",
-    description="通过 tapd CLI 执行 TAPD 操作。可用子命令：workspace list|switch|info / story|task|bug list|show|create|update|count|todo / timesheet list|add / iteration list|create|update / comment list|add / wiki list|show / launch list / workflow transitions|status-map / url <tapd-url> 等等。项目ID通过 --workspace-id 指定。返回 JSON。",
+    description="通过 tapd CLI 执行 TAPD 操作。可用子命令：workspace list|switch|info / story|task|bug list|show|create|update|count|todo / timesheet list|add / iteration list|create|update / comment list|add / wiki list|show / launch list / workflow transitions|status-map / url <tapd-url> 等等。项目ID通过 --workspace-id 指定。返回 JSON。使用规则：1) 查单个任务/需求/缺陷详情用 show <id>，不要用 list --filter 的 | 拼接多个 ID（仅返回第一条）；2) 按人员查工时/任务时，必须先 workspace list 拉全部项目，然后逐个查，严禁主观挑选部分项目，如需缩小范围让用户确认；3) timesheet list 按人员筛选必须用 --owner <中文显示名>（如 --owner 傅政），禁止用 --filter username= 或 --filter owner=，--filter 的 & 串联不生效且字段名不对。",
     parameters={
         "type": "object",
         "properties": {
             "args": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "tapd 命令参数，如 ['story', 'list', '--workspace-id', '12345', '--filter', 'name=LIKE<登录>']",
+                "description": "tapd 命令参数，如 ['timesheet', 'list', '--workspace-id', '12345', '--owner', '傅政', '--limit', '200'] 或 ['story', 'list', '--workspace-id', '12345', '--filter', 'name=LIKE<登录>']",
             },
         },
         "required": ["args"],
@@ -61,6 +61,12 @@ async def tapd_cli(args: list[str]) -> ToolResult:
         return ToolResult(success=False, error=error)
     if _config is None:
         return ToolResult(success=False, error="TAPD 配置未初始化，请检查 config.yaml")
+
+    # timesheet list 默认仅返回10条且无分页标识，强制追加 --limit 防止数据截断
+    args = list(args)
+    if args[0] == "timesheet" and "list" in args and "--limit" not in args:
+        args.extend(["--limit", "200"])
+
     try:
         env = os.environ.copy()
         # 注意：Token 通过环境变量传入外部二进制 tapd.exe。若该二进制
@@ -79,7 +85,10 @@ async def tapd_cli(args: list[str]) -> ToolResult:
 
         if proc.returncode != 0:
             err_msg = (stderr.decode(errors="replace") or stdout.decode(errors="replace")).strip()
-            return ToolResult(success=False, error=err_msg or f"tapd CLI 返回非零退出码 {proc.returncode}")
+            if not err_msg:
+                cmd_str = "tapd " + " ".join(args)
+                err_msg = f"tapd CLI 返回非零退出码 {proc.returncode}，命令: {cmd_str}"
+            return ToolResult(success=False, error=err_msg)
         return ToolResult(success=True, data=stdout.decode(errors="replace").strip())
     except FileNotFoundError:
         return ToolResult(success=False, error="tapd CLI 未找到，请将 tapd.exe 放到项目 bin/ 目录")
