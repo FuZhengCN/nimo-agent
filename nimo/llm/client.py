@@ -47,7 +47,6 @@ class LLMClient:
                     "model": self.model,
                     "messages": full_messages,
                     "temperature": self.temperature,
-                    "extra_body": {"thinking": {"type": "enabled"}},
                 }
                 if tools:
                     kwargs["tools"] = tools
