@@ -18,6 +18,7 @@ _CRON_RE = re.compile(
 )
 
 _config = None
+_file_lock = asyncio.Lock()
 
 
 def _schedules_path() -> Path:
@@ -177,43 +178,46 @@ async def schedule(action: str, task_id: str = "", cron: str = "",
         return ToolResult(success=False, error="调度功能未启用，请在 config.yaml 中设置 schedules.enabled: true")
 
     if action == "add":
-        schedules = _load_schedules()
-        if any(t["id"] == task_id for t in schedules["tasks"]):
-            return ToolResult(success=False, error=f"任务 {task_id} 已存在，请先删除再添加")
+        async with _file_lock:
+            schedules = _load_schedules()
+            if any(t["id"] == task_id for t in schedules["tasks"]):
+                return ToolResult(success=False, error=f"任务 {task_id} 已存在，请先删除再添加")
 
-        now_str = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-        task = {
-            "id": task_id,
-            "type": "cron" if cron else "once",
-            "cron": cron or None,
-            "delay_minutes": delay_minutes,
-            "prompt": prompt,
-            "enabled": True,
-            "created_at": now_str,
-            "last_run": None,
-            "last_result": None,
-        }
-        schedules["tasks"].append(task)
-        _save_schedules(schedules)
+            now_str = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+            task = {
+                "id": task_id,
+                "type": "cron" if cron else "once",
+                "cron": cron or None,
+                "delay_minutes": delay_minutes,
+                "prompt": prompt,
+                "enabled": True,
+                "created_at": now_str,
+                "last_run": None,
+                "last_result": None,
+            }
+            schedules["tasks"].append(task)
+            _save_schedules(schedules)
         return ToolResult(success=True, data={"id": task_id, "message": f"定时任务 {task_id} 已添加"})
 
     if action == "remove":
-        schedules = _load_schedules()
-        if not any(t["id"] == task_id for t in schedules["tasks"]):
-            return ToolResult(success=False, error=f"未找到定时任务：{task_id}")
-        schedules["tasks"] = [t for t in schedules["tasks"] if t["id"] != task_id]
-        _save_schedules(schedules)
+        async with _file_lock:
+            schedules = _load_schedules()
+            if not any(t["id"] == task_id for t in schedules["tasks"]):
+                return ToolResult(success=False, error=f"未找到定时任务：{task_id}")
+            schedules["tasks"] = [t for t in schedules["tasks"] if t["id"] != task_id]
+            _save_schedules(schedules)
         return ToolResult(success=True, data={"message": f"定时任务 {task_id} 已删除"})
 
     if action in ("enable", "disable"):
         new_state = action == "enable"
-        schedules = _load_schedules()
-        for t in schedules["tasks"]:
-            if t["id"] == task_id:
-                t["enabled"] = new_state
-                _save_schedules(schedules)
-                label = "已启用" if new_state else "已禁用"
-                return ToolResult(success=True, data={"message": f"定时任务 {task_id} {label}"})
+        async with _file_lock:
+            schedules = _load_schedules()
+            for t in schedules["tasks"]:
+                if t["id"] == task_id:
+                    t["enabled"] = new_state
+                    _save_schedules(schedules)
+                    label = "已启用" if new_state else "已禁用"
+                    return ToolResult(success=True, data={"message": f"定时任务 {task_id} {label}"})
         return ToolResult(success=False, error=f"未找到定时任务：{task_id}")
 
     return ToolResult(success=False, error=f"未知操作：{action}")
@@ -252,15 +256,16 @@ def _cron_match(cron: str, dt: datetime) -> bool:
     """检查 datetime 是否匹配 cron 表达式。"""
     parts = cron.strip().split()
     minute, hour, day, month, weekday = parts
-    # 规范化：将星期字段中的 7 替换为 0（0 和 7 都表示周日）
-    weekday = re.sub(r'(?<![0-9])7(?![0-9])', '0', weekday)
     wd = dt.isoweekday() % 7  # 1=mon..7=sun → 0=sun..6=sat
+    weekday_match = _cron_field_match(weekday, wd)
+    if not weekday_match and wd == 0:
+        weekday_match = _cron_field_match(weekday, 7)
     return (
         _cron_field_match(minute, dt.minute) and
         _cron_field_match(hour, dt.hour) and
         _cron_field_match(day, dt.day) and
         _cron_field_match(month, dt.month) and
-        _cron_field_match(weekday, wd)
+        weekday_match
     )
 
 
@@ -369,26 +374,27 @@ class Scheduler:
         except Exception as e:
             result = f"执行异常：{e}"
 
-        schedules = _load_schedules()
-        for t in schedules.get("tasks", []):
-            if t["id"] == st.id:
-                t["last_run"] = run_str
-                full_str = result if isinstance(result, str) else str(result)
-                t["last_result"] = (
-                    {"error": full_str} if full_str.startswith("执行异常：")
-                    else {"summary": full_str[:120]}
-                )
-                if st.type == "once":
-                    t["enabled"] = False
-                elif st.type == "cron":
-                    next_at = _next_cron(st.cron, datetime.now())
-                    if next_at:
-                        self._tasks.append(_SchedTask(
-                            id=st.id, type="cron", cron=st.cron,
-                            trigger_at=next_at, prompt=st.prompt, raw=t,
-                        ))
-                break
-        _save_schedules(schedules)
+        async with _file_lock:
+            schedules = _load_schedules()
+            for t in schedules.get("tasks", []):
+                if t["id"] == st.id:
+                    t["last_run"] = run_str
+                    full_str = result if isinstance(result, str) else str(result)
+                    t["last_result"] = (
+                        {"error": full_str} if full_str.startswith("执行异常：")
+                        else {"summary": full_str[:120]}
+                    )
+                    if st.type == "once":
+                        t["enabled"] = False
+                    elif st.type == "cron":
+                        next_at = _next_cron(st.cron, datetime.now())
+                        if next_at:
+                            self._tasks.append(_SchedTask(
+                                id=st.id, type="cron", cron=st.cron,
+                                trigger_at=next_at, prompt=st.prompt, raw=t,
+                            ))
+                    break
+            _save_schedules(schedules)
 
         full = result if isinstance(result, str) else str(result)
         self._notifications.append(Notification(

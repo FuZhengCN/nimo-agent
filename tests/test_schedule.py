@@ -349,6 +349,16 @@ def test_cron_match_weekday():
     assert _cron_match("0 9 * * 1-5", sat.replace(hour=9, minute=0)) is False
 
 
+def test_cron_match_weekday_5_7_range():
+    """5-7 范围（周五到周日），周日应匹配。"""
+    sunday = datetime(2026, 6, 21, 9, 0)
+    assert _cron_match("0 9 * * 5-7", sunday) is True
+    saturday = datetime(2026, 6, 20, 9, 0)
+    assert _cron_match("0 9 * * 5-7", saturday) is True
+    monday = datetime(2026, 6, 22, 9, 0)
+    assert _cron_match("0 9 * * 5-7", monday) is False
+
+
 def test_cron_match_comma():
     """8,17 逗号分隔。"""
     assert _cron_match("0 8,17 * * *", datetime(2026, 6, 17, 8, 0)) is True

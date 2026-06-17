@@ -11,6 +11,7 @@ from openai import AuthenticationError
 from nimo.config import Config, load_config
 from nimo.agent import Agent
 from nimo.display import print_welcome, print_response_box
+from nimo.tools.schedule import Scheduler
 
 # Import to trigger tool auto-discovery and registration
 import nimo.tools  # noqa: F401
@@ -168,6 +169,26 @@ async def build_agent(config: Config) -> Agent:
     return Agent(config)
 
 
+_scheduler: Scheduler | None = None
+
+
+def _check_schedule_notifications(sched: Scheduler) -> None:
+    """检查并向用户展示调度通知。"""
+    notifications = sched.pop_notifications()
+    if not notifications:
+        return
+    for n in notifications:
+        ts = n.completed_at[:16].replace("T", " ")
+        print(f"\n{ORANGE}[!] [{ts}] 定时任务 '{n.task_id}' 完成：{n.summary}{RESET}\n查看结果？(y/n) ", end="", flush=True)
+        try:
+            answer = input()
+        except (EOFError, KeyboardInterrupt):
+            return
+        if answer.strip().lower() == "y":
+            print_response_box(n.full_text)
+            print()
+
+
 async def main() -> None:
     parser = argparse.ArgumentParser()
     args, _ = parser.parse_known_args()
@@ -181,9 +202,16 @@ async def main() -> None:
     config = load_config()
     agent = await build_agent(config)
 
+    # 启动后台调度器（新 Agent 实例，独立 history/profile）
+    global _scheduler
+    _scheduler = Scheduler(lambda: Agent(config))
+    asyncio.create_task(_scheduler.start())
+
     print_welcome(model=config.llm.model, cwd=os.getcwd(), version="0.1.0")
     while True:
         try:
+            if _scheduler:
+                _check_schedule_notifications(_scheduler)
             user_input = input(f"{ORANGE}❯ ")
         except (EOFError, KeyboardInterrupt):
             agent.save_history()
