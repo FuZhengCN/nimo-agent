@@ -443,28 +443,33 @@ async def test_scheduler_runs_ready_once_task(schedule_config, tmp_path, monkeyp
     monkeypatch.setattr("nimo.tools.schedule._schedules_path", lambda: tmp_path / "schedules.json")
     monkeypatch.setattr("nimo.tools.schedule._config", schedule_config)
 
-    # 写入一个 once 任务，预期1分钟前就该触发
-    past = datetime.now() - timedelta(minutes=2)
-    from nimo.tools.schedule import _save_schedules
-    _save_schedules({
-        "tasks": [{
-            "id": "ready-task",
-            "type": "once",
-            "cron": None,
-            "delay_minutes": 1,
-            "prompt": "检查提交",
-            "enabled": True,
-            "created_at": past.strftime("%Y-%m-%dT%H:%M:%S"),
-            "last_run": None,
-            "last_result": None,
-        }]
-    })
-
     mock_run = AsyncMock(return_value="发现 2 个新提交")
     agent_factory = MagicMock(return_value=MagicMock())
     agent_factory().run = mock_run
 
     sched = Scheduler(agent_factory)
+    # 先调一次 _load + _tick 清空初始状态
+    sched._load()
+    await sched._tick()
+
+    # 模拟运行时: schedule 工具在 scheduler 运行中写入任务
+    from nimo.tools.schedule import _save_schedules
+    now = datetime.now()
+    _save_schedules({
+        "tasks": [{
+            "id": "ready-task",
+            "type": "once",
+            "cron": None,
+            "delay_minutes": 0,  # 立即触发
+            "prompt": "检查提交",
+            "enabled": True,
+            "created_at": now.strftime("%Y-%m-%dT%H:%M:%S.%f"),
+            "last_run": None,
+            "last_result": None,
+        }]
+    })
+
+    sched._load()  # 加载新写入的任务 (created_at > _started_at → 不跳过)
     await sched._tick()
 
     mock_run.assert_called_once_with("检查提交")
@@ -486,27 +491,32 @@ async def test_scheduler_task_error_does_not_crash(schedule_config, tmp_path, mo
     monkeypatch.setattr("nimo.tools.schedule._schedules_path", lambda: tmp_path / "schedules.json")
     monkeypatch.setattr("nimo.tools.schedule._config", schedule_config)
 
-    past = datetime.now() - timedelta(minutes=2)
-    from nimo.tools.schedule import _save_schedules
-    _save_schedules({
-        "tasks": [{
-            "id": "bad-task",
-            "type": "once",
-            "cron": None,
-            "delay_minutes": 1,
-            "prompt": "检查",
-            "enabled": True,
-            "created_at": past.strftime("%Y-%m-%dT%H:%M:%S"),
-            "last_run": None,
-            "last_result": None,
-        }]
-    })
-
     mock_run = AsyncMock(side_effect=RuntimeError("LLM 挂了"))
     agent_factory = MagicMock(return_value=MagicMock())
     agent_factory().run = mock_run
 
     sched = Scheduler(agent_factory)
+    sched._load()
+    await sched._tick()
+
+    # 模拟运行时写入：created_at > _started_at，不跳过
+    from nimo.tools.schedule import _save_schedules
+    now = datetime.now()
+    _save_schedules({
+        "tasks": [{
+            "id": "bad-task",
+            "type": "once",
+            "cron": None,
+            "delay_minutes": 0,
+            "prompt": "检查",
+            "enabled": True,
+            "created_at": now.strftime("%Y-%m-%dT%H:%M:%S.%f"),
+            "last_run": None,
+            "last_result": None,
+        }]
+    })
+
+    sched._load()
     await sched._tick()  # 不应抛异常
 
     from nimo.tools.schedule import _load_schedules

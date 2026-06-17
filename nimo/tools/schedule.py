@@ -183,7 +183,7 @@ async def schedule(action: str, task_id: str = "", cron: str = "",
             if any(t["id"] == task_id for t in schedules["tasks"]):
                 return ToolResult(success=False, error=f"任务 {task_id} 已存在，请先删除再添加")
 
-            now_str = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+            now_str = datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%f")
             task = {
                 "id": task_id,
                 "type": "cron" if cron else "once",
@@ -311,6 +311,7 @@ class Scheduler:
         self._agent_factory = agent_factory
         self._tasks: list[_SchedTask] = []
         self._notifications: list[Notification] = []
+        self._started_at = datetime.now()  # 用于判断 once 任务是"错过"还是"等下一轮 tick"
 
     def _load(self) -> None:
         """从 schedules.json 加载 enabled 任务，计算触发时间。"""
@@ -329,8 +330,8 @@ class Scheduler:
                     continue
                 expected = created + timedelta(minutes=t.get("delay_minutes", 0))
                 if now >= expected:
-                    gap = (now - expected).total_seconds() / 60.0
-                    if gap > 2:  # 超过2分钟视为错过窗口，直接禁用
+                    # 任务创建于 scheduler 启动之前 → 来自上次会话，跳过
+                    if created < self._started_at:
                         t["enabled"] = False
                         changed = True
                         continue
@@ -412,6 +413,7 @@ class Scheduler:
     async def start(self) -> None:
         """启动调度器循环。作为 asyncio Task 运行，永不停止。"""
         self._load()
+        await self._tick()  # 启动后立即处理待触发任务，避免首次 sleep 错过
         while True:
             await asyncio.sleep(60)
             try:
