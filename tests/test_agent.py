@@ -312,6 +312,7 @@ async def test_agent_extracts_profile_on_trim(sample_config):
 
     sample_config.llm.profile_extract = True
     agent = Agent(sample_config)
+    agent._profile._facts.clear()  # 清除从磁盘加载的真实数据，保证测试隔离
     agent._history._max_rounds = 1
 
     agent._history.add({"role": "user", "content": "我叫张三"})
@@ -372,6 +373,7 @@ def test_clear_history_does_not_clear_profile(sample_config):
 
     sample_config.llm.profile_extract = True
     agent = Agent(sample_config)
+    agent._profile._facts.clear()  # 清除从磁盘加载的真实数据，保证测试隔离
     agent._profile.update({"姓名": "张三"})
     agent._history.add({"role": "user", "content": "hello"})
 

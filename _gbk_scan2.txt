@@ -1,0 +1,2 @@
+nimo/prompts\system.md:15: ['U+2705(✅)']
+nimo/prompts\system.md:16: ['U+1F4A1(💡)', 'U+274C(❌)']

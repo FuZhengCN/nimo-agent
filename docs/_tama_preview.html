@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nimo 拓麻歌子风格设计</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0d1117;
+    color: #c9d1d9;
+    font-family: 'Cascadia Code', 'Consolas', 'Courier New', monospace;
+    padding: 40px 20px;
+  }
+  h1 { text-align: center; font-size: 20px; color: #f0f6fc; margin-bottom: 8px; }
+  .subtitle { text-align: center; color: #8b949e; font-size: 14px; margin-bottom: 40px; }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+    gap: 24px;
+    max-width: 1000px;
+    margin: 0 auto 40px;
+  }
+
+  .card {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .card:hover { border-color: #24A8D0; }
+  .card.recommend { border-color: #3fb950; border-width: 2px; }
+
+  .card-header {
+    padding: 12px 16px;
+    border-bottom: 1px solid #21262d;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .card-title { font-weight: 600; color: #f0f6fc; font-size: 15px; }
+  .card-badge {
+    font-size: 12px; padding: 2px 8px; border-radius: 12px;
+    background: #1f2937; color: #8b949e;
+  }
+  .card-badge.pick { background: #1b3a2d; color: #3fb950; }
+
+  .terminal {
+    padding: 24px 20px;
+    background: #0d1117;
+    min-height: 100px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .bot-line {
+    color: #24A8D0;
+    white-space: pre;
+    line-height: 1.25;
+    font-size: 17px;
+  }
+  .info-dim { color: #8b949e; font-size: 14px; white-space: pre; line-height: 1.5; }
+  .info-dim .v { color: #f0f6fc; font-weight: 600; }
+  .info-dim .a { color: #24A8D0; }
+
+  .card-footer {
+    padding: 12px 16px;
+    border-top: 1px solid #21262d;
+    font-size: 13px;
+    color: #8b949e;
+    line-height: 1.6;
+  }
+
+  .section-title {
+    max-width: 1000px;
+    margin: 0 auto 16px;
+    font-size: 16px;
+    color: #f0f6fc;
+    font-weight: 600;
+  }
+
+  .ref-box {
+    max-width: 1000px;
+    margin: 0 auto 32px;
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .ref-box .terminal { padding: 20px; min-height: auto; }
+
+  /* full context */
+  .full {
+    max-width: 1000px;
+    margin: 0 auto;
+    background: #0d1117;
+    border: 1px solid #24A8D0;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .full .terminal { padding: 32px 28px; align-items: flex-start; }
+</style>
+</head>
+<body>
+
+<h1>拓麻歌子灵感 — Nimo 像素宠物</h1>
+<p class="subtitle">蛋形身体 · 豆豆眼 · 半方块象限字符 · 3行结构</p>
+
+<!-- Reference -->
+<div class="section-title">参考</div>
+<div class="ref-box">
+  <div class="terminal">
+    <div style="display:flex; gap:60px; align-items:flex-end; flex-wrap:wrap; justify-content:center">
+      <div style="text-align:center">
+        <div style="color:#8b949e; font-size:12px; margin-bottom:8px">Claude Code 机器人</div>
+        <div class="bot-line">▐▛███▜▌</div>
+        <div class="bot-line">▝▜█████▛▘</div>
+        <div class="bot-line" style="color:#24A8D0">  ▘▘ ▝▝</div>
+        <div style="color:#484f58; font-size:11px; margin-top:6px">方头 · 实心脸 · 机械感</div>
+      </div>
+      <div style="text-align:center">
+        <div style="color:#8b949e; font-size:12px; margin-bottom:8px">拓麻歌子 Mametchi（概念）</div>
+        <div style="color:#ffb347; font-size:17px; line-height:1.25; white-space:pre">
+         ▄▄▄▄▄▄
+        █ ▄▄ ██
+        ████████
+         █ ██ █
+          ▀▀▀▀
+        </div>
+        <div style="color:#484f58; font-size:11px; margin-top:6px">蛋形 · 豆豆眼 · 小脚 · 萌系</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Designs -->
+<div class="section-title">Nimo 三款方案</div>
+<div class="grid">
+
+  <!-- Design A -->
+  <div class="card recommend">
+    <div class="card-header">
+      <span class="card-title">A · 宠物蛋</span>
+      <span class="card-badge pick">推荐</span>
+    </div>
+    <div class="terminal">
+      <div class="bot-line"> ▐▀▀▀▀▌</div>
+      <div class="bot-line">▐▛ ██ ▜▌</div>
+      <div class="bot-line"> ▘▘  ▝▝</div>
+    </div>
+    <div class="card-footer">
+      蛋形圆顶 + 空谷豆豆眼 + 小脚丫。最接近拓麻歌子的"蛋形身体"设计语言。没有方角，整体圆润。
+    </div>
+  </div>
+
+  <!-- Design B -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">B · 天线宝宝</span>
+      <span class="card-badge">俏皮</span>
+    </div>
+    <div class="terminal">
+      <div class="bot-line">  ▐██▌</div>
+      <div class="bot-line">▐▛▀██▀▜▌</div>
+      <div class="bot-line">▝▜████▛▘</div>
+    </div>
+    <div class="card-footer">
+      头顶天线/耳朵（像拓麻歌子角色的标志性凸起）+ ▀护目镜眼 + 圆脸。俏皮有辨识度。
+    </div>
+  </div>
+
+  <!-- Design C -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">C · 大眼萌</span>
+      <span class="card-badge">呆萌</span>
+    </div>
+    <div class="terminal">
+      <div class="bot-line"> ▐▀▀▀▀▀▀▌</div>
+      <div class="bot-line">▐▛  ██  ▜▌</div>
+      <div class="bot-line">▝▜██████▛▘</div>
+    </div>
+    <div class="card-footer">
+      宽屏蛋形 + 大眼睛间距 + 圆下巴。比例夸张，像拓麻歌子幼年期的婴儿肥阶段。
+    </div>
+  </div>
+
+</div>
+
+<!-- Full context for Design A -->
+<div class="section-title">方案A 欢迎信息预览</div>
+<div class="full">
+  <div class="terminal">
+    <div class="bot-line"> ▐▀▀▀▀▌   <span class="v">Nimo v0.1.0</span></div>
+    <div class="info-dim">▐▛ ██ ▜▌  <span class="info-dim">deepseek-chat</span> · <span class="a">Nimo Agent</span></div>
+    <div class="info-dim" style="color:#8b949e"> ▘▘  ▝▝    <span class="info-dim">C:/Users/fuzheng</span></div>
+  </div>
+</div>
+
+</body>
+</html>

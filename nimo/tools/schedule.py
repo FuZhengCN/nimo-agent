@@ -5,6 +5,7 @@ import logging
 import re
 from datetime import datetime, timezone
 from pathlib import Path
+from nimo.tools.registry import register_tool, ToolResult, ToolRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +88,7 @@ def _validate_cron(cron: str) -> bool:
     return True
 
 
-def _validate_args(action: str, task_id: str | None = None, cron: str = "",
+def _validate_args(action: str, task_id: str = "", cron: str = "",
                    prompt: str = "", delay_minutes=None) -> str | None:
     """校验 schedule 工具参数，返回错误信息或 None（通过）。"""
     if action not in _ALLOWED_ACTIONS:
@@ -95,21 +96,20 @@ def _validate_args(action: str, task_id: str | None = None, cron: str = "",
 
     needs_id = {"add", "remove", "enable", "disable"}
     if action in needs_id:
-        if task_id is None:
-            if action != "add":
-                return f"{action} 操作需要指定 task_id"
-        elif not task_id:
+        if not task_id:
             return "缺少 task_id 参数"
-        elif not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9\-]{0,62}[a-zA-Z0-9]?", task_id):
+        if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9\-]{0,62}[a-zA-Z0-9]?", task_id):
             return f"无效的 task_id：{task_id}（仅允许字母、数字、连字符，最长64字符）"
-        elif len(task_id) > 64:
+        if len(task_id) > 64:
             return f"task_id 过长：{len(task_id)}（最多64字符）"
 
-    if action == "add" and task_id is not None:
+    if action == "add":
         has_cron = bool(cron)
         has_delay = delay_minutes is not None
         if has_cron and has_delay:
             return "cron 和 delay_minutes 不能同时指定"
+        if not has_cron and not has_delay:
+            return "cron 或 delay_minutes 至少需要指定一个"
         if has_cron and not _validate_cron(cron):
             return f"无效的 cron 表达式：{cron}（需要5字段格式，如 '0 9 * * 1-5'）"
         if has_delay and not (1 <= delay_minutes <= 1440):
@@ -118,3 +118,100 @@ def _validate_args(action: str, task_id: str | None = None, cron: str = "",
             return f"prompt 过长：{len(prompt)}字符（最多500字符）"
 
     return None
+
+
+async def init_schedule(config) -> None:
+    global _config
+    _config = config
+
+
+@register_tool(
+    name="schedule",
+    description="管理定时检查任务。可列出、添加、删除、启用或禁用定时任务。**关键规则：当用户指定了时间延迟（如\"5分钟后\"\"30分钟后\"\"明天早上9点\"\"下午3点\"），你必须使用此工具注册定时任务，严禁自行判断\"时间短就直接执行\"。用户说等多久就等多久。**",
+    parameters={
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "enum": ["list", "add", "remove", "enable", "disable"],
+                "description": "操作类型：list=列出所有任务, add=添加, remove=删除, enable=启用, disable=禁用",
+            },
+            "task_id": {
+                "type": "string",
+                "description": "任务ID（add/remove/enable/disable 时需要）。仅允许字母数字和连字符，最长64字符。",
+            },
+            "cron": {
+                "type": "string",
+                "description": "5字段 cron 表达式（add 时需要，与 delay_minutes 二选一），如 '0 9 * * 1-5' 表示工作日9点。",
+            },
+            "delay_minutes": {
+                "type": "integer",
+                "description": "延迟分钟数（add 时可选，与 cron 二选一），1-1440。使用此参数创建一次性定时任务，执行后自动禁用。",
+            },
+            "prompt": {
+                "type": "string",
+                "description": "定时执行的提示内容（add 时需要），最多500字符。",
+            },
+        },
+        "required": ["action"],
+    },
+)
+async def schedule(action: str, task_id: str = "", cron: str = "",
+                   prompt: str = "", delay_minutes=None) -> ToolResult:
+    if error := _validate_args(action, task_id, cron, prompt, delay_minutes):
+        return ToolResult(success=False, error=error)
+
+    if action == "list":
+        data = _load_schedules()
+        return ToolResult(success=True, data=data)
+
+    if _config is None:
+        return ToolResult(success=False, error="定时任务配置未初始化")
+
+    if not _config.schedules.enabled:
+        return ToolResult(success=False, error="调度功能未启用，请在 config.yaml 中设置 schedules.enabled: true")
+
+    if action == "add":
+        schedules = _load_schedules()
+        if any(t["id"] == task_id for t in schedules["tasks"]):
+            return ToolResult(success=False, error=f"任务 {task_id} 已存在，请先删除再添加")
+
+        now_str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+        task = {
+            "id": task_id,
+            "type": "cron" if cron else "once",
+            "cron": cron or None,
+            "delay_minutes": delay_minutes,
+            "prompt": prompt,
+            "enabled": True,
+            "created_at": now_str,
+            "last_run": None,
+            "last_result": None,
+        }
+        schedules["tasks"].append(task)
+        _save_schedules(schedules)
+        return ToolResult(success=True, data={"id": task_id, "message": f"定时任务 {task_id} 已添加"})
+
+    if action == "remove":
+        schedules = _load_schedules()
+        if not any(t["id"] == task_id for t in schedules["tasks"]):
+            return ToolResult(success=False, error=f"未找到定时任务：{task_id}")
+        schedules["tasks"] = [t for t in schedules["tasks"] if t["id"] != task_id]
+        _save_schedules(schedules)
+        return ToolResult(success=True, data={"message": f"定时任务 {task_id} 已删除"})
+
+    if action in ("enable", "disable"):
+        new_state = action == "enable"
+        schedules = _load_schedules()
+        for t in schedules["tasks"]:
+            if t["id"] == task_id:
+                t["enabled"] = new_state
+                _save_schedules(schedules)
+                label = "已启用" if new_state else "已禁用"
+                return ToolResult(success=True, data={"message": f"定时任务 {task_id} {label}"})
+        return ToolResult(success=False, error=f"未找到定时任务：{task_id}")
+
+    return ToolResult(success=False, error=f"未知操作：{action}")
+
+
+ToolRegistry.get_instance().register_init(init_schedule)
