@@ -1,9 +1,12 @@
 # tests/test_schedule.py
 
+import asyncio
 import json
 import pytest
+from datetime import datetime, timedelta
 from pathlib import Path
-from nimo.tools.schedule import _validate_args, _load_schedules, _save_schedules, schedule
+from unittest.mock import AsyncMock, MagicMock, patch
+from nimo.tools.schedule import _validate_args, _load_schedules, _save_schedules, schedule, _cron_match, _next_cron, Scheduler
 from nimo.config import Config, LLMConfig, TapdConfig, SchedulesConfig
 
 
@@ -20,9 +23,9 @@ def test_validate_action_whitelist():
 
 
 def test_validate_task_id_valid():
-    assert _validate_args("add", "daily-check", "0 9 * * *") is None
-    assert _validate_args("add", "weekly-report", "0 9 * * *") is None
-    assert _validate_args("add", "task-123", "0 9 * * *") is None
+    assert _validate_args("add", "daily-check", "0 9 * * *", prompt="检查") is None
+    assert _validate_args("add", "weekly-report", "0 9 * * *", prompt="检查") is None
+    assert _validate_args("add", "task-123", "0 9 * * *", prompt="检查") is None
 
 
 def test_validate_task_id_invalid():
@@ -30,13 +33,13 @@ def test_validate_task_id_invalid():
     assert _validate_args("add", "rm -rf", delay_minutes=30) is not None
     assert _validate_args("add", "", delay_minutes=30) is not None
     assert _validate_args("add", "a" * 65, delay_minutes=30) is not None  # 超过64字符
-    assert _validate_args("add", "A" * 64, delay_minutes=30) is None
+    assert _validate_args("add", "A" * 64, delay_minutes=30, prompt="检查") is None
 
 
 def test_validate_cron_valid():
-    assert _validate_args("add", "ok", "0 9 * * 1-5") is None
-    assert _validate_args("add", "ok", "*/5 * * * *") is None
-    assert _validate_args("add", "ok", "30 8,17 * * 1-5") is None
+    assert _validate_args("add", "ok", "0 9 * * 1-5", prompt="检查") is None
+    assert _validate_args("add", "ok", "*/5 * * * *", prompt="检查") is None
+    assert _validate_args("add", "ok", "30 8,17 * * 1-5", prompt="检查") is None
 
 
 def test_validate_cron_invalid():
@@ -46,9 +49,9 @@ def test_validate_cron_invalid():
 
 
 def test_validate_delay_minutes_valid():
-    assert _validate_args("add", "ok", delay_minutes=30) is None
-    assert _validate_args("add", "ok", delay_minutes=1) is None
-    assert _validate_args("add", "ok", delay_minutes=1440) is None
+    assert _validate_args("add", "ok", delay_minutes=30, prompt="检查") is None
+    assert _validate_args("add", "ok", delay_minutes=1, prompt="检查") is None
+    assert _validate_args("add", "ok", delay_minutes=1440, prompt="检查") is None
 
 
 def test_validate_delay_minutes_invalid():
@@ -75,6 +78,12 @@ def test_validate_prompt_too_long():
 
 def test_validate_prompt_ok():
     assert _validate_args("add", "ok", "0 9 * * *", "检查任务") is None
+
+
+def test_validate_add_requires_prompt():
+    """add 操作必须提供 prompt。"""
+    assert _validate_args("add", "ok", "0 9 * * *") is not None
+    assert _validate_args("add", "ok", "0 9 * * *", "") is not None
 
 
 def test_load_schedules_not_exist(tmp_path, monkeypatch):
@@ -301,3 +310,195 @@ async def test_schedule_tool_invalid_action(schedule_config, tmp_path, monkeypat
     result = await schedule(action="hack")
     assert result.success is False
     assert "不允许" in result.error
+
+
+# ── cron 匹配 ──
+
+
+def test_cron_match_asterisk():
+    """* * * * * 匹配任意时间。"""
+    dt = datetime(2026, 6, 17, 12, 30)
+    assert _cron_match("* * * * *", dt) is True
+
+
+def test_cron_match_exact_minute():
+    assert _cron_match("30 12 * * *", datetime(2026, 6, 17, 12, 30)) is True
+    assert _cron_match("30 12 * * *", datetime(2026, 6, 17, 12, 31)) is False
+    assert _cron_match("30 12 * * *", datetime(2026, 6, 17, 13, 30)) is False
+
+
+def test_cron_match_slash():
+    """*/15 每15分钟。"""
+    assert _cron_match("*/15 * * * *", datetime(2026, 6, 17, 12, 0)) is True
+    assert _cron_match("*/15 * * * *", datetime(2026, 6, 17, 12, 15)) is True
+    assert _cron_match("*/15 * * * *", datetime(2026, 6, 17, 12, 30)) is True
+    assert _cron_match("*/15 * * * *", datetime(2026, 6, 17, 12, 1)) is False
+
+
+def test_cron_match_range():
+    """9-17 时间范围。"""
+    assert _cron_match("* 9-17 * * 1-5", datetime(2026, 6, 17, 9, 0)) is True  # Wed
+    assert _cron_match("* 9-17 * * 1-5", datetime(2026, 6, 17, 18, 0)) is False
+
+
+def test_cron_match_weekday():
+    """1-5 工作日，0=sun。"""
+    wed = datetime(2026, 6, 17)  # 周三
+    sat = datetime(2026, 6, 20)  # 周六
+    assert _cron_match("0 9 * * 1-5", wed.replace(hour=9, minute=0)) is True
+    assert _cron_match("0 9 * * 1-5", sat.replace(hour=9, minute=0)) is False
+
+
+def test_cron_match_comma():
+    """8,17 逗号分隔。"""
+    assert _cron_match("0 8,17 * * *", datetime(2026, 6, 17, 8, 0)) is True
+    assert _cron_match("0 8,17 * * *", datetime(2026, 6, 17, 17, 0)) is True
+    assert _cron_match("0 8,17 * * *", datetime(2026, 6, 17, 12, 0)) is False
+
+
+def test_next_cron_daily():
+    """每天9点，从8点开始找，应找到今天9点。"""
+    dt = datetime(2026, 6, 17, 8, 0)
+    result = _next_cron("0 9 * * *", dt)
+    assert result.hour == 9
+    assert result.minute == 0
+    assert result.day == 17
+
+
+def test_next_cron_same_minute():
+    """当前时间已过匹配点，应找下一个。"""
+    dt = datetime(2026, 6, 17, 12, 31)
+    result = _next_cron("30 12 * * *", dt)
+    assert result > dt
+    assert result.hour == 12 or result.day > 17  # 要么当天晚些时候，要么第二天
+
+
+def test_next_cron_returns_none_for_unmatchable():
+    """7天内无匹配返回 None（极端情况）。"""
+    # "2月30号" 这种不存在的日期，或只在特定条件下匹配
+    # 用2月30号测试：日期范围是1-31，但2月只有28/29天
+    # 直接测试更简单：在很远的时间段内没有匹配
+    result = _next_cron("0 0 31 2 *", datetime(2026, 6, 17))
+    assert result is None  # 2月31日不存在，7天内找不到
+
+
+# ── 调度器 ──
+
+
+@pytest.mark.asyncio
+async def test_scheduler_missed_once_task(schedule_config, tmp_path, monkeypatch):
+    """once 任务错过窗口期启动后直接 disabled，不补执行，不产生通知。"""
+    monkeypatch.setattr("nimo.tools.schedule._schedules_path", lambda: tmp_path / "schedules.json")
+    monkeypatch.setattr("nimo.tools.schedule._config", schedule_config)
+
+    # 写入一个 once 任务，created_at 是10分钟前，delay=5 → 5分钟前就该触发
+    past = datetime.now() - timedelta(minutes=10)
+    from nimo.tools.schedule import _save_schedules
+    _save_schedules({
+        "tasks": [{
+            "id": "missed-task",
+            "type": "once",
+            "cron": None,
+            "delay_minutes": 5,
+            "prompt": "检查",
+            "enabled": True,
+            "created_at": past.strftime("%Y-%m-%dT%H:%M:%S"),
+            "last_run": None,
+            "last_result": None,
+        }]
+    })
+
+    mock_run = AsyncMock(return_value="结果")
+    agent_factory = MagicMock(return_value=MagicMock())
+    agent_factory().run = mock_run
+
+    sched = Scheduler(agent_factory)
+    await sched._tick()
+
+    # agent.run 不应被调用（错过窗口，直接跳过）
+    mock_run.assert_not_called()
+
+    # 任务被标记 disabled
+    from nimo.tools.schedule import _load_schedules
+    task = _load_schedules()["tasks"][0]
+    assert task["enabled"] is False
+
+    # 无通知
+    assert len(sched.pop_notifications()) == 0
+
+
+@pytest.mark.asyncio
+async def test_scheduler_runs_ready_once_task(schedule_config, tmp_path, monkeypatch):
+    """once 任务到时间触发执行，完成后 disabled 并推送通知。"""
+    monkeypatch.setattr("nimo.tools.schedule._schedules_path", lambda: tmp_path / "schedules.json")
+    monkeypatch.setattr("nimo.tools.schedule._config", schedule_config)
+
+    # 写入一个 once 任务，预期1分钟前就该触发
+    past = datetime.now() - timedelta(minutes=2)
+    from nimo.tools.schedule import _save_schedules
+    _save_schedules({
+        "tasks": [{
+            "id": "ready-task",
+            "type": "once",
+            "cron": None,
+            "delay_minutes": 1,
+            "prompt": "检查提交",
+            "enabled": True,
+            "created_at": past.strftime("%Y-%m-%dT%H:%M:%S"),
+            "last_run": None,
+            "last_result": None,
+        }]
+    })
+
+    mock_run = AsyncMock(return_value="发现 2 个新提交")
+    agent_factory = MagicMock(return_value=MagicMock())
+    agent_factory().run = mock_run
+
+    sched = Scheduler(agent_factory)
+    await sched._tick()
+
+    mock_run.assert_called_once_with("检查提交")
+
+    notifications = sched.pop_notifications()
+    assert len(notifications) == 1
+    assert notifications[0].task_id == "ready-task"
+    assert "2 个新提交" in notifications[0].summary
+
+    from nimo.tools.schedule import _load_schedules
+    task = _load_schedules()["tasks"][0]
+    assert task["enabled"] is False
+    assert task["last_run"] is not None
+
+
+@pytest.mark.asyncio
+async def test_scheduler_task_error_does_not_crash(schedule_config, tmp_path, monkeypatch):
+    """单任务 agent.run 抛异常不影响调度器（不崩，继续运行）。"""
+    monkeypatch.setattr("nimo.tools.schedule._schedules_path", lambda: tmp_path / "schedules.json")
+    monkeypatch.setattr("nimo.tools.schedule._config", schedule_config)
+
+    past = datetime.now() - timedelta(minutes=2)
+    from nimo.tools.schedule import _save_schedules
+    _save_schedules({
+        "tasks": [{
+            "id": "bad-task",
+            "type": "once",
+            "cron": None,
+            "delay_minutes": 1,
+            "prompt": "检查",
+            "enabled": True,
+            "created_at": past.strftime("%Y-%m-%dT%H:%M:%S"),
+            "last_run": None,
+            "last_result": None,
+        }]
+    })
+
+    mock_run = AsyncMock(side_effect=RuntimeError("LLM 挂了"))
+    agent_factory = MagicMock(return_value=MagicMock())
+    agent_factory().run = mock_run
+
+    sched = Scheduler(agent_factory)
+    await sched._tick()  # 不应抛异常
+
+    from nimo.tools.schedule import _load_schedules
+    task = _load_schedules()["tasks"][0]
+    assert "LLM 挂了" in task["last_result"].get("error", "")

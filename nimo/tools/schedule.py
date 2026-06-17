@@ -1,9 +1,12 @@
 # nimo/tools/schedule.py
 
+import asyncio
 import json
 import logging
 import re
-from datetime import datetime, timezone
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from nimo.tools.registry import register_tool, ToolResult, ToolRegistry
 
@@ -50,7 +53,7 @@ def _validate_cron_field(pattern: str, min_val: int, max_val: int) -> bool:
             if not step.isdigit():
                 return False
             step_val = int(step)
-            if step_val < 1 or step_val > max_val:
+            if step_val < 1:
                 return False
             if base == "*":
                 continue
@@ -114,6 +117,8 @@ def _validate_args(action: str, task_id: str = "", cron: str = "",
             return f"无效的 cron 表达式：{cron}（需要5字段格式，如 '0 9 * * 1-5'）"
         if has_delay and not (1 <= delay_minutes <= 1440):
             return f"delay_minutes 超出范围：{delay_minutes}（1-1440）"
+        if action == "add" and not prompt:
+            return "add 操作必须提供 prompt"
         if prompt and len(prompt) > 500:
             return f"prompt 过长：{len(prompt)}字符（最多500字符）"
 
@@ -176,7 +181,7 @@ async def schedule(action: str, task_id: str = "", cron: str = "",
         if any(t["id"] == task_id for t in schedules["tasks"]):
             return ToolResult(success=False, error=f"任务 {task_id} 已存在，请先删除再添加")
 
-        now_str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+        now_str = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
         task = {
             "id": task_id,
             "type": "cron" if cron else "once",
@@ -215,3 +220,196 @@ async def schedule(action: str, task_id: str = "", cron: str = "",
 
 
 ToolRegistry.get_instance().register_init(init_schedule)
+
+
+# ── cron 匹配 ──
+
+
+def _cron_field_match(pattern: str, value: int) -> bool:
+    """单个 cron 字段匹配。"""
+    if pattern == "*":
+        return True
+    for part in pattern.split(","):
+        if "/" in part:
+            base, step = part.split("/", 1)
+            base = 0 if base == "*" else int(base)
+            step = int(step)
+            if value >= base and (value - base) % step == 0:
+                return True
+        elif "-" in part:
+            lo, hi = part.split("-", 1)
+            if int(lo) <= value <= int(hi):
+                return True
+        elif part == "*":
+            return True
+        else:
+            if int(part) == value:
+                return True
+    return False
+
+
+def _cron_match(cron: str, dt: datetime) -> bool:
+    """检查 datetime 是否匹配 cron 表达式。"""
+    parts = cron.strip().split()
+    minute, hour, day, month, weekday = parts
+    # 规范化：将星期字段中的 7 替换为 0（0 和 7 都表示周日）
+    weekday = re.sub(r'(?<![0-9])7(?![0-9])', '0', weekday)
+    wd = dt.isoweekday() % 7  # 1=mon..7=sun → 0=sun..6=sat
+    return (
+        _cron_field_match(minute, dt.minute) and
+        _cron_field_match(hour, dt.hour) and
+        _cron_field_match(day, dt.day) and
+        _cron_field_match(month, dt.month) and
+        _cron_field_match(weekday, wd)
+    )
+
+
+def _next_cron(cron: str, from_dt: datetime | None = None) -> datetime | None:
+    """计算 cron 下一次触发时间，最多查找 7 天。无匹配返回 None。"""
+    if from_dt is None:
+        from_dt = datetime.now()
+    dt = from_dt + timedelta(minutes=1)
+    end = from_dt + timedelta(days=7)
+    while dt <= end:
+        if _cron_match(cron, dt):
+            return dt
+        dt += timedelta(minutes=1)
+    return None
+
+
+# ── 调度器 ──
+
+
+@dataclass
+class Notification:
+    task_id: str
+    completed_at: str
+    summary: str
+    full_text: str
+
+
+@dataclass
+class _SchedTask:
+    """调度器内部任务表示。"""
+    id: str
+    type: str
+    cron: str | None
+    trigger_at: datetime
+    prompt: str
+    raw: dict
+
+
+class Scheduler:
+    """后台调度器：asyncio Task，每 60s 检查，到点触发 agent.run()。"""
+
+    def __init__(self, agent_factory: Callable):
+        self._agent_factory = agent_factory
+        self._tasks: list[_SchedTask] = []
+        self._notifications: list[Notification] = []
+
+    def _load(self) -> None:
+        """从 schedules.json 加载 enabled 任务，计算触发时间。"""
+        self._tasks.clear()
+        data = _load_schedules()
+        now = datetime.now()
+        changed = False
+        for t in data.get("tasks", []):
+            if not t.get("enabled"):
+                continue
+            task_id = t["id"]
+            if t["type"] == "once":
+                try:
+                    created = datetime.fromisoformat(t["created_at"])
+                except (ValueError, TypeError):
+                    continue
+                expected = created + timedelta(minutes=t.get("delay_minutes", 0))
+                if now >= expected:
+                    gap = (now - expected).total_seconds() / 60.0
+                    if gap > 2:  # 超过2分钟视为错过窗口，直接禁用
+                        t["enabled"] = False
+                        changed = True
+                        continue
+                self._tasks.append(_SchedTask(
+                    id=task_id, type="once", cron=None,
+                    trigger_at=expected, prompt=t["prompt"], raw=t,
+                ))
+            else:
+                if not t.get("cron"):
+                    continue
+                next_at = _next_cron(t["cron"], now)
+                if next_at is None:
+                    continue
+                self._tasks.append(_SchedTask(
+                    id=task_id, type="cron", cron=t["cron"],
+                    trigger_at=next_at, prompt=t["prompt"], raw=t,
+                ))
+        if changed:
+            _save_schedules(data)
+
+    async def _tick(self) -> None:
+        """单次检查：重新加载任务，到点触发后台执行。"""
+        self._load()
+        now = datetime.now()
+        todo: list[asyncio.Task] = []
+        done_ids: set[str] = set()
+        for st in self._tasks:
+            if now >= st.trigger_at:
+                todo.append(asyncio.create_task(self._execute(st)))
+                done_ids.add(st.id)
+        self._tasks = [st for st in self._tasks if st.id not in done_ids]
+        if todo:
+            await asyncio.gather(*todo, return_exceptions=True)
+
+    async def _execute(self, st: _SchedTask) -> None:
+        """后台执行单个任务，完成后更新 schedules.json + 推送通知。"""
+        run_str = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+        try:
+            agent = self._agent_factory()
+            result = await agent.run(st.prompt)
+        except Exception as e:
+            result = f"执行异常：{e}"
+
+        schedules = _load_schedules()
+        for t in schedules.get("tasks", []):
+            if t["id"] == st.id:
+                t["last_run"] = run_str
+                full_str = result if isinstance(result, str) else str(result)
+                t["last_result"] = (
+                    {"error": full_str} if full_str.startswith("执行异常：")
+                    else {"summary": full_str[:120]}
+                )
+                if st.type == "once":
+                    t["enabled"] = False
+                elif st.type == "cron":
+                    next_at = _next_cron(st.cron, datetime.now())
+                    if next_at:
+                        self._tasks.append(_SchedTask(
+                            id=st.id, type="cron", cron=st.cron,
+                            trigger_at=next_at, prompt=st.prompt, raw=t,
+                        ))
+                break
+        _save_schedules(schedules)
+
+        full = result if isinstance(result, str) else str(result)
+        self._notifications.append(Notification(
+            task_id=st.id,
+            completed_at=run_str,
+            summary=full[:120],
+            full_text=full,
+        ))
+
+    def pop_notifications(self) -> list[Notification]:
+        ns = list(self._notifications)
+        self._notifications.clear()
+        return ns
+
+    async def start(self) -> None:
+        """启动调度器循环。作为 asyncio Task 运行，永不停止。"""
+        self._load()
+        while True:
+            await asyncio.sleep(60)
+            try:
+                await self._tick()
+                self._load()  # 重新加载，捕获外部变更（工具 add/remove）
+            except Exception:
+                logger.exception("调度器 tick 异常，跳过本轮")
