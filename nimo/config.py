@@ -35,10 +35,16 @@ class TortoiseSvnConfig:
 
 
 @dataclass
+class SchedulesConfig:
+    enabled: bool = False
+
+
+@dataclass
 class Config:
     llm: LLMConfig
     tapd: TapdConfig
     tortoisesvn: TortoiseSvnConfig = field(default_factory=TortoiseSvnConfig)
+    schedules: SchedulesConfig = field(default_factory=SchedulesConfig)
 
 
 def _env_override(key: str, default: str) -> str:
@@ -93,4 +99,8 @@ def load_config(path: str = "config.yaml") -> Config:
     if "wc_path" in ts_raw and not paths:
         paths["default"] = ts_raw["wc_path"]
     tortoisesvn = TortoiseSvnConfig(paths=paths)
-    return Config(llm=llm, tapd=tapd, tortoisesvn=tortoisesvn)
+    schedules_raw = raw.get("schedules", {})
+    schedules = SchedulesConfig(
+        enabled=schedules_raw.get("enabled", False),
+    )
+    return Config(llm=llm, tapd=tapd, tortoisesvn=tortoisesvn, schedules=schedules)

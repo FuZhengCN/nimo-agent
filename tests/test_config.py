@@ -2,7 +2,7 @@ import os
 import tempfile
 import pytest
 import yaml
-from nimo.config import Config, ConfigError, LLMConfig, TapdConfig, load_config
+from nimo.config import Config, ConfigError, LLMConfig, TapdConfig, TortoiseSvnConfig, SchedulesConfig, load_config
 
 
 def test_load_config_from_yaml():
@@ -122,6 +122,62 @@ tapd:
             load_config(tmp_path)
     finally:
         os.unlink(tmp_path)
+
+
+def test_schedules_config_default():
+    sc = SchedulesConfig()
+    assert sc.enabled is False
+
+
+def test_schedules_config_enabled():
+    sc = SchedulesConfig(enabled=True)
+    assert sc.enabled is True
+
+
+def test_load_config_without_schedules_section():
+    """schedules 段缺失时使用默认值（enabled=False）。"""
+    yaml_content = """llm:
+  api_key: sk-test
+  base_url: https://api.deepseek.com
+  model: deepseek-chat
+  max_tool_rounds: 5
+  history_rounds: 10
+tapd:
+  api_base: https://api.tapd.cn
+  access_token: token123
+"""
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        f.write(yaml_content)
+        tmp = f.name
+    try:
+        config = load_config(tmp)
+        assert config.schedules.enabled is False
+    finally:
+        os.unlink(tmp)
+
+
+def test_load_config_with_schedules_enabled():
+    """schedules 段存在且 enabled 为 true。"""
+    yaml_content = """llm:
+  api_key: sk-test
+  base_url: https://api.deepseek.com
+  model: deepseek-chat
+  max_tool_rounds: 5
+  history_rounds: 10
+tapd:
+  api_base: https://api.tapd.cn
+  access_token: token123
+schedules:
+  enabled: true
+"""
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        f.write(yaml_content)
+        tmp = f.name
+    try:
+        config = load_config(tmp)
+        assert config.schedules.enabled is True
+    finally:
+        os.unlink(tmp)
 
 
 def test_missing_tapd_access_token_raises_error():
