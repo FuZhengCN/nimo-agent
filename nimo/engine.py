@@ -43,6 +43,30 @@ class StepResult:
 class ExecutionEngine:
     _instance: "ExecutionEngine | None" = None
 
+    # action 名 → (tapd CLI 子命令, 操作)
+    _ACTION_MAP: dict[str, tuple[str, str]] = {
+        "workspace_list": ("workspace", "list"),
+        "story_list": ("story", "list"),
+        "story_show": ("story", "show"),
+        "story_create": ("story", "create"),
+        "story_update": ("story", "update"),
+        "story_count": ("story", "count"),
+        "task_list": ("task", "list"),
+        "task_show": ("task", "show"),
+        "task_create": ("task", "create"),
+        "task_update": ("task", "update"),
+        "bug_list": ("bug", "list"),
+        "bug_show": ("bug", "show"),
+        "bug_create": ("bug", "create"),
+        "bug_update": ("bug", "update"),
+        "timesheet_list": ("timesheet", "list"),
+        "timesheet_add": ("timesheet", "add"),
+        "iteration_list": ("iteration", "list"),
+        "iteration_create": ("iteration", "create"),
+        "comment_list": ("comment", "list"),
+        "comment_add": ("comment", "add"),
+    }
+
     def __init__(self):
         self._config: Config | None = None
 
@@ -137,31 +161,7 @@ class ExecutionEngine:
         action = intent.action
         p = intent.params
 
-        # action 名 → CLI 子命令和操作
-        _ACTION_MAP: dict[str, tuple[str, str]] = {
-            "workspace_list": ("workspace", "list"),
-            "story_list": ("story", "list"),
-            "story_show": ("story", "show"),
-            "story_create": ("story", "create"),
-            "story_update": ("story", "update"),
-            "story_count": ("story", "count"),
-            "task_list": ("task", "list"),
-            "task_show": ("task", "show"),
-            "task_create": ("task", "create"),
-            "task_update": ("task", "update"),
-            "bug_list": ("bug", "list"),
-            "bug_show": ("bug", "show"),
-            "bug_create": ("bug", "create"),
-            "bug_update": ("bug", "update"),
-            "timesheet_list": ("timesheet", "list"),
-            "timesheet_add": ("timesheet", "add"),
-            "iteration_list": ("iteration", "list"),
-            "iteration_create": ("iteration", "create"),
-            "comment_list": ("comment", "list"),
-            "comment_add": ("comment", "add"),
-        }
-
-        mapping = _ACTION_MAP.get(action)
+        mapping = self._ACTION_MAP.get(action)
         if mapping is None:
             return None
         subcmd, op = mapping
@@ -172,7 +172,7 @@ class ExecutionEngine:
             args.extend(["--workspace-id", workspace_id])
 
         # 实体操作需要 ID
-        if op == "show" and p.get("entity_id"):
+        if op in ("show", "update") and p.get("entity_id"):
             args.append(p["entity_id"])
 
         # list 类操作的通用参数
