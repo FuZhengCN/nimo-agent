@@ -124,7 +124,7 @@ def _format_chain(agent: Agent) -> str:
             if result_idx >= len(results):
                 break
             rr = results[result_idx]
-            call_str = _format_tapd_call(rr["args"])
+            call_str = _format_tool_call(rr["name"], rr["args"])
             lines.append(f"    {call_str}  →  {rr['result']}")
             result_idx += 1
 
@@ -137,23 +137,34 @@ def _format_chain(agent: Agent) -> str:
     return "\n".join(lines)
 
 
-def _format_tapd_call(args) -> str:
-    """将 tapd_cli 参数格式化为可读的命令行形式。"""
+def _format_tool_call(name: str, args) -> str:
+    """将工具调用的参数格式化为可读的命令行形式。"""
     if not isinstance(args, dict):
-        return str(args)[:60]
+        return f"{name} {str(args)[:60]}"
+    # 意图工具：{action, owner, workspace_id, ...}
+    if "action" in args:
+        parts = [name, args["action"]]
+        for key in ("owner", "workspace_id", "entity_id", "project", "name", "date"):
+            if key in args and args[key]:
+                parts.append(f"--{key.replace('_', '-')} {args[key]}")
+        if "extra" in args and args["extra"]:
+            extra = args["extra"]
+            if isinstance(extra, dict):
+                for k, v in extra.items():
+                    parts.append(f"--{k.replace('_', '-')} {v}")
+        return " ".join(parts)
+    # 旧透传工具：{args: [subcmd, op, --flag, val, ...]}
     argv = args.get("args", [])
     if not argv:
-        return "tapd_cli"
-    cmd = " ".join(argv[:2])  # e.g. "workspace list", "timesheet list"
-    # 提取关键参数
+        return name
+    cmd = " ".join(argv[:2])
     params = []
     i = 2
     while i < len(argv):
         if argv[i].startswith("--"):
-            key = argv[i][2:]  # 去掉 -- 前缀
+            key = argv[i][2:]
             if i + 1 < len(argv) and not argv[i + 1].startswith("--"):
-                val = argv[i + 1]
-                params.append(f"--{key} {val}")
+                params.append(f"--{key} {argv[i + 1]}")
                 i += 2
             else:
                 params.append(f"--{key}")
@@ -162,8 +173,8 @@ def _format_tapd_call(args) -> str:
             params.append(argv[i])
             i += 1
     if params:
-        return f"{cmd} {' '.join(params)}"
-    return cmd
+        return f"{name} {cmd} {' '.join(params)}"
+    return f"{name} {cmd}"
 
 
 async def build_agent(config: Config) -> Agent:
