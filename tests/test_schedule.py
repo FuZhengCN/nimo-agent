@@ -423,7 +423,7 @@ async def test_scheduler_missed_once_task(schedule_config, tmp_path, monkeypatch
     agent_factory().run = mock_run
 
     sched = Scheduler(agent_factory)
-    await sched._tick()
+    await sched._check_all()
 
     # agent.run 不应被调用（错过窗口，直接跳过）
     mock_run.assert_not_called()
@@ -448,11 +448,8 @@ async def test_scheduler_runs_ready_once_task(schedule_config, tmp_path, monkeyp
     agent_factory().run = mock_run
 
     sched = Scheduler(agent_factory)
-    # 先调一次 _load + _tick 清空初始状态
-    sched._load()
-    await sched._tick()
 
-    # 模拟运行时: schedule 工具在 scheduler 运行中写入任务
+    # 写入：created_at > _started_at，不跳过（Scheduler 先于任务创建）
     from nimo.tools.schedule import _save_schedules
     now = datetime.now()
     _save_schedules({
@@ -469,8 +466,7 @@ async def test_scheduler_runs_ready_once_task(schedule_config, tmp_path, monkeyp
         }]
     })
 
-    sched._load()  # 加载新写入的任务 (created_at > _started_at → 不跳过)
-    await sched._tick()
+    await sched._check_all()
 
     mock_run.assert_called_once_with("检查提交")
 
@@ -496,8 +492,6 @@ async def test_scheduler_task_error_does_not_crash(schedule_config, tmp_path, mo
     agent_factory().run = mock_run
 
     sched = Scheduler(agent_factory)
-    sched._load()
-    await sched._tick()
 
     # 模拟运行时写入：created_at > _started_at，不跳过
     from nimo.tools.schedule import _save_schedules
@@ -516,8 +510,7 @@ async def test_scheduler_task_error_does_not_crash(schedule_config, tmp_path, mo
         }]
     })
 
-    sched._load()
-    await sched._tick()  # 不应抛异常
+    await sched._check_all()  # 不应抛异常
 
     from nimo.tools.schedule import _load_schedules
     task = _load_schedules()["tasks"][0]

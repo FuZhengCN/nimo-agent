@@ -2,6 +2,7 @@ import argparse
 import asyncio
 import logging
 import os
+import threading
 import warnings
 
 warnings.filterwarnings("ignore", message=".*Pydantic V1.*", module="openai.*")
@@ -172,21 +173,40 @@ async def build_agent(config: Config) -> Agent:
 _scheduler: Scheduler | None = None
 
 
-def _check_schedule_notifications(sched: Scheduler) -> None:
-    """检查并向用户展示调度通知。"""
-    notifications = sched.pop_notifications()
-    if not notifications:
-        return
-    for n in notifications:
-        ts = n.completed_at[:16].replace("T", " ")
-        print(f"\n{ORANGE}[!] [{ts}] 定时任务 '{n.task_id}' 完成：{n.summary}{RESET}\n查看结果？(y/n) ", end="", flush=True)
+def _show_notification(n: "Notification") -> None:
+    """直接展示通知结果，无需用户确认。"""
+    ts = n.completed_at[:16].replace("T", " ")
+    print(f"\n{ORANGE}[!] [{ts}] 定时任务 '{n.task_id}' 完成{RESET}")
+    print_response_box(n.full_text)
+    print()
+
+
+async def _input_with_poll(prompt: str, sched: Scheduler | None, poll_sec: int = 2) -> str | None:
+    """在等待用户输入期间定期检查调度通知。input() 在线程中执行，不阻塞事件循环。"""
+    result: list[str | None] = []
+    ready = threading.Event()
+
+    def _read() -> None:
         try:
-            answer = input()
+            result.append(input(prompt))
         except (EOFError, KeyboardInterrupt):
-            return
-        if answer.strip().lower() == "y":
-            print_response_box(n.full_text)
-            print()
+            result.append(None)
+        ready.set()
+
+    thread = threading.Thread(target=_read, daemon=True)
+    thread.start()
+
+    loop = asyncio.get_running_loop()
+    while not ready.is_set():
+        await loop.run_in_executor(None, ready.wait, poll_sec)
+        if sched and not ready.is_set():
+            for n in sched.pop_notifications():
+                _show_notification(n)
+                # 重新打印提示符
+                print(f"{prompt}", end="", flush=True)
+
+    thread.join()
+    return result[0]
 
 
 async def main() -> None:
@@ -208,11 +228,14 @@ async def main() -> None:
     asyncio.create_task(_scheduler.start())
 
     print_welcome(model=config.llm.model, cwd=os.getcwd(), version="0.1.0")
+    prompt = f"{ORANGE}❯ "
     while True:
         try:
-            if _scheduler:
-                _check_schedule_notifications(_scheduler)
-            user_input = input(f"{ORANGE}❯ ")
+            user_input = await _input_with_poll(prompt, _scheduler)
+            if user_input is None:
+                agent.save_history()
+                print("\n再见！")
+                break
         except (EOFError, KeyboardInterrupt):
             agent.save_history()
             print("\n再见！")

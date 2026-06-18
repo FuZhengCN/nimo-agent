@@ -293,113 +293,108 @@ class Notification:
     full_text: str
 
 
-@dataclass
-class _SchedTask:
-    """调度器内部任务表示。"""
-    id: str
-    type: str
-    cron: str | None
-    trigger_at: datetime
-    prompt: str
-    raw: dict
-
-
 class Scheduler:
-    """后台调度器：asyncio Task，每 60s 检查，到点触发 agent.run()。"""
+    """后台调度器：每 60s 检查 schedules.json，发现到期任务立即触发。"""
 
     def __init__(self, agent_factory: Callable):
         self._agent_factory = agent_factory
-        self._tasks: list[_SchedTask] = []
         self._notifications: list[Notification] = []
-        self._started_at = datetime.now()  # 用于判断 once 任务是"错过"还是"等下一轮 tick"
+        self._started_at = datetime.now()
 
-    def _load(self) -> None:
-        """从 schedules.json 加载 enabled 任务，计算触发时间。"""
-        self._tasks.clear()
+    def _is_once_due(self, t: dict, now: datetime) -> tuple[bool, bool]:
+        """检查 once 任务是否到期。返回 (到期, 是否修改了任务数据)。"""
+        try:
+            created = datetime.fromisoformat(t["created_at"])
+        except (ValueError, TypeError):
+            return False, False
+        expected = created + timedelta(minutes=t.get("delay_minutes", 0))
+        if now < expected:
+            return False, False
+        if created < self._started_at:
+            t["enabled"] = False
+            return False, True  # 已禁用，需保存
+        return True, False
+
+    def _is_cron_due(self, t: dict, now: datetime) -> bool:
+        """cron 任务：自上次执行（或创建）以来，cron 是否曾匹配过。"""
+        cron = t["cron"]
+        last_run = t.get("last_run")
+
+        if last_run:
+            try:
+                search_from = datetime.fromisoformat(last_run) + timedelta(minutes=1)
+            except (ValueError, TypeError):
+                search_from = now - timedelta(minutes=2)
+        else:
+            try:
+                created = datetime.fromisoformat(t["created_at"])
+            except (ValueError, TypeError):
+                created = now - timedelta(minutes=2)
+            search_from = created
+
+        dt = search_from
+        while dt <= now:
+            if _cron_match(cron, dt):
+                return True
+            dt += timedelta(minutes=1)
+        return False
+
+    async def _check_all(self) -> None:
+        """扫描所有 enabled 任务，到期则触发执行。"""
         data = _load_schedules()
-        now = datetime.now()
         changed = False
+        todo: list[asyncio.Task] = []
+
         for t in data.get("tasks", []):
             if not t.get("enabled"):
                 continue
-            task_id = t["id"]
+            now = datetime.now()
             if t["type"] == "once":
-                try:
-                    created = datetime.fromisoformat(t["created_at"])
-                except (ValueError, TypeError):
-                    continue
-                expected = created + timedelta(minutes=t.get("delay_minutes", 0))
-                if now >= expected:
-                    # 任务创建于 scheduler 启动之前 → 来自上次会话，跳过
-                    if created < self._started_at:
-                        t["enabled"] = False
-                        changed = True
-                        continue
-                self._tasks.append(_SchedTask(
-                    id=task_id, type="once", cron=None,
-                    trigger_at=expected, prompt=t["prompt"], raw=t,
-                ))
+                due, modified = self._is_once_due(t, now)
+                if modified:
+                    changed = True
+            elif t.get("cron"):
+                due = self._is_cron_due(t, now)
             else:
-                if not t.get("cron"):
-                    continue
-                next_at = _next_cron(t["cron"], now)
-                if next_at is None:
-                    continue
-                self._tasks.append(_SchedTask(
-                    id=task_id, type="cron", cron=t["cron"],
-                    trigger_at=next_at, prompt=t["prompt"], raw=t,
+                continue
+
+            if due:
+                todo.append(asyncio.create_task(
+                    self._execute(t["id"], t["prompt"], t["type"] == "once")
                 ))
+
         if changed:
             _save_schedules(data)
-
-    async def _tick(self) -> None:
-        """单次检查：重新加载任务，到点触发后台执行。"""
-        self._load()
-        now = datetime.now()
-        todo: list[asyncio.Task] = []
-        done_ids: set[str] = set()
-        for st in self._tasks:
-            if now >= st.trigger_at:
-                todo.append(asyncio.create_task(self._execute(st)))
-                done_ids.add(st.id)
-        self._tasks = [st for st in self._tasks if st.id not in done_ids]
         if todo:
             await asyncio.gather(*todo, return_exceptions=True)
 
-    async def _execute(self, st: _SchedTask) -> None:
+    async def _execute(self, task_id: str, prompt: str, is_once: bool) -> None:
         """后台执行单个任务，完成后更新 schedules.json + 推送通知。"""
         run_str = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
         try:
             agent = self._agent_factory()
-            result = await agent.run(st.prompt)
+            result = await agent.run(prompt)
         except Exception as e:
             result = f"执行异常：{e}"
 
         async with _file_lock:
             schedules = _load_schedules()
             for t in schedules.get("tasks", []):
-                if t["id"] == st.id:
+                if t["id"] == task_id:
                     t["last_run"] = run_str
                     full_str = result if isinstance(result, str) else str(result)
                     t["last_result"] = (
                         {"error": full_str} if full_str.startswith("执行异常：")
                         else {"summary": full_str[:120]}
                     )
-                    if st.type == "once":
+                    if is_once:
                         t["enabled"] = False
-                    elif st.type == "cron":
-                        next_at = _next_cron(st.cron, datetime.now())
-                        if next_at:
-                            self._tasks.append(_SchedTask(
-                                id=st.id, type="cron", cron=st.cron,
-                                trigger_at=next_at, prompt=st.prompt, raw=t,
-                            ))
                     break
             _save_schedules(schedules)
 
         full = result if isinstance(result, str) else str(result)
         self._notifications.append(Notification(
-            task_id=st.id,
+            task_id=task_id,
             completed_at=run_str,
             summary=full[:120],
             full_text=full,
@@ -411,13 +406,10 @@ class Scheduler:
         return ns
 
     async def start(self) -> None:
-        """启动调度器循环。作为 asyncio Task 运行，永不停止。"""
-        self._load()
-        await self._tick()  # 启动后立即处理待触发任务，避免首次 sleep 错过
+        """每 60s 扫描 schedules.json，发现到期任务立即触发。"""
         while True:
             await asyncio.sleep(60)
             try:
-                await self._tick()
-                self._load()  # 重新加载，捕获外部变更（工具 add/remove）
+                await self._check_all()
             except Exception:
-                logger.exception("调度器 tick 异常，跳过本轮")
+                logger.exception("调度器异常，跳过本轮")

@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from nimo.main import build_agent
+from nimo.main import build_agent, _show_notification
 from nimo.tools.schedule import Notification
 
 
@@ -20,33 +20,16 @@ async def test_build_agent_loads_config():
     assert result is mock_agent.return_value
 
 
-def test_check_notifications_empty(capsys):
-    """通知队列为空时无输出。"""
-    from nimo.main import _check_schedule_notifications
-    scheduler = MagicMock()
-    scheduler.pop_notifications.return_value = []
-
-    _check_schedule_notifications(scheduler)
+def test_show_notification(capsys):
+    """通知展示包含任务ID、时间和内容。"""
+    _show_notification(Notification(
+        task_id="test-task",
+        completed_at="2026-06-17T14:30:00",
+        summary="一切正常",
+        full_text="检查完毕，无异常",
+    ))
 
     captured = capsys.readouterr()
-    assert captured.out == ""
-
-
-def test_check_notifications_user_says_no(monkeypatch):
-    """用户选择跳过通知——函数不抛异常。"""
-    from nimo.main import _check_schedule_notifications
-    scheduler = MagicMock()
-    scheduler.pop_notifications.return_value = [
-        Notification(
-            task_id="remind",
-            completed_at="2026-06-17T14:30:00",
-            summary="一切正常",
-            full_text="检查完毕，无异常",
-        )
-    ]
-
-    inputs = iter(["n"])
-    monkeypatch.setattr("builtins.input", lambda _="": next(inputs))
-
-    # Should not raise
-    _check_schedule_notifications(scheduler)
+    assert "test-task" in captured.out
+    assert "检查完毕，无异常" in captured.out
+    assert "14:30" in captured.out
