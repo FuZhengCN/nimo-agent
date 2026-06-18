@@ -131,3 +131,100 @@ class ExecutionEngine:
         if proc.returncode != 0:
             return False, out_str, err_str or out_str or f"svn 返回非零退出码 {proc.returncode}"
         return True, out_str, ""
+
+    def _build_tapd_args(self, intent: Intent, workspace_id: str | None = None) -> list[str] | None:
+        """将 Intent 转换为 tapd CLI args 列表。返回 None 表示参数不合法。"""
+        action = intent.action
+        p = intent.params
+
+        # action 名 → CLI 子命令和操作
+        _ACTION_MAP: dict[str, tuple[str, str]] = {
+            "workspace_list": ("workspace", "list"),
+            "story_list": ("story", "list"),
+            "story_show": ("story", "show"),
+            "story_create": ("story", "create"),
+            "story_update": ("story", "update"),
+            "story_count": ("story", "count"),
+            "task_list": ("task", "list"),
+            "task_show": ("task", "show"),
+            "task_create": ("task", "create"),
+            "task_update": ("task", "update"),
+            "bug_list": ("bug", "list"),
+            "bug_show": ("bug", "show"),
+            "bug_create": ("bug", "create"),
+            "bug_update": ("bug", "update"),
+            "timesheet_list": ("timesheet", "list"),
+            "timesheet_add": ("timesheet", "add"),
+            "iteration_list": ("iteration", "list"),
+            "iteration_create": ("iteration", "create"),
+            "comment_list": ("comment", "list"),
+            "comment_add": ("comment", "add"),
+        }
+
+        mapping = _ACTION_MAP.get(action)
+        if mapping is None:
+            return None
+        subcmd, op = mapping
+        args = [subcmd, op]
+
+        # 需要 workspace_id 的命令
+        if subcmd != "workspace" and workspace_id:
+            args.extend(["--workspace-id", workspace_id])
+
+        # 实体操作需要 ID
+        if op == "show" and p.get("entity_id"):
+            args.append(p["entity_id"])
+
+        # list 类操作的通用参数
+        if op == "list":
+            if p.get("owner"):
+                args.extend(["--owner", p["owner"]])
+            if p.get("limit"):
+                args.extend(["--limit", str(p["limit"])])
+            if p.get("iteration_id"):
+                args.extend(["--iteration-id", p["iteration_id"]])
+
+        # timesheet_list 特殊：默认追加 --limit
+        if action == "timesheet_list":
+            if "--limit" not in args:
+                args.extend(["--limit", "200"])
+
+        # timesheet_add 参数
+        if action == "timesheet_add":
+            entity_type = p.get("entity_type", "")
+            entity_id = p.get("entity_id", "")
+            if entity_type and entity_id:
+                args.extend(["--entity-type", entity_type, "--entity-id", entity_id])
+            if p.get("timespent"):
+                args.extend(["--timespent", p["timespent"]])
+            if p.get("date"):
+                args.extend(["--date", p["date"]])
+            if p.get("remark"):
+                args.extend(["--remark", p["remark"]])
+
+        # create / update 参数
+        if op in ("create", "update"):
+            if p.get("name"):
+                args.extend(["--name", p["name"]])
+            if p.get("description"):
+                args.extend(["--description", p["description"]])
+            if p.get("status"):
+                args.extend(["--status", p["status"]])
+
+        return args
+
+    def _resolve_svn_path(self, path: str, project: str) -> tuple[str, str | None]:
+        """解析 SVN 路径，返回 (path, error)。"""
+        if path:
+            return path, None
+        cfg = self._config.tortoisesvn if self._config else None
+        if not cfg or not cfg.paths:
+            return "", "未配置 SVN 项目，请在 config.yaml 的 tortoisesvn.paths 中配置"
+        if project:
+            if project in cfg.paths:
+                return cfg.paths[project], None
+            return "", f"未知项目：{project}，可用：{', '.join(cfg.paths.keys())}"
+        if len(cfg.paths) == 1:
+            return next(iter(cfg.paths.values())), None
+        names = ', '.join(cfg.paths.keys())
+        return "", f"有多个项目（{names}），请用 project 参数指定"
