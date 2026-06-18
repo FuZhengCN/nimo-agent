@@ -228,3 +228,159 @@ class ExecutionEngine:
             return next(iter(cfg.paths.values())), None
         names = ', '.join(cfg.paths.keys())
         return "", f"有多个项目（{names}），请用 project 参数指定"
+
+    async def execute(self, intent: Intent) -> ToolResult:
+        """入口：解析 Intent，匹配模式，执行，返回 ToolResult。"""
+        if intent.tool == "tapd":
+            return await self._execute_tapd(intent)
+        elif intent.tool == "svn":
+            return await self._execute_svn(intent)
+        return ToolResult(success=False, error=f"未知工具类型：{intent.tool}")
+
+    async def _execute_tapd(self, intent: Intent) -> ToolResult:
+        """执行 TAPD 意图。"""
+        ws_id = intent.params.get("workspace_id", "")
+        entity_id = intent.params.get("entity_id", "")
+
+        # direct 模式：有明确目标
+        if ws_id or entity_id or intent.action == "workspace_list":
+            if intent.action == "workspace_list":
+                args = ["workspace", "list"]
+            else:
+                args = self._build_tapd_args(intent, workspace_id=ws_id or None)
+                if args is None:
+                    return ToolResult(success=False, error=f"未知 TAPD 操作：{intent.action}")
+            success, stdout, error = await self._run_tapd(args)
+            if success:
+                return ToolResult(success=True, data=stdout)
+            return ToolResult(success=False, error=error or stdout)
+
+        # for_each_workspace 模式
+        if intent.action in _FOR_EACH_ACTIONS:
+            return await self._execute_for_each_workspace(intent)
+
+        # 需要 workspace_id 但没传
+        return ToolResult(
+            success=False,
+            error=f"操作 {intent.action} 需要 workspace_id 参数",
+        )
+
+    async def _execute_for_each_workspace(self, intent: Intent) -> ToolResult:
+        """for_each_workspace 模式：先拉全部项目，再逐个查询。"""
+        # Step 1: 获取全部项目
+        success, stdout, error = await self._run_tapd(["workspace", "list"])
+        if not success:
+            return ToolResult(success=False, error=f"获取项目列表失败：{error or stdout}")
+
+        # 解析项目列表 JSON
+        try:
+            data = json.loads(stdout)
+        except json.JSONDecodeError:
+            return ToolResult(success=False, error=f"项目列表 JSON 解析失败：{stdout[:200]}")
+        if isinstance(data, dict):
+            workspaces = data.get("data", data.get("items", []))
+        elif isinstance(data, list):
+            workspaces = data
+        else:
+            return ToolResult(success=False, error=f"无法识别的项目列表格式：{stdout[:200]}")
+        if not workspaces:
+            return ToolResult(success=False, error="没有任何项目")
+
+        # Step 2: 逐个查询
+        step_results: list[StepResult] = []
+        for ws in workspaces:
+            if isinstance(ws, dict):
+                ws_id = str(ws.get("id", ws.get("workspace_id", "")))
+                ws_name = ws.get("name", ws.get("workspace_name", ws_id))
+            else:
+                ws_id = str(ws)
+                ws_name = ws_id
+
+            args = self._build_tapd_args(intent, workspace_id=ws_id)
+            if args is None:
+                step_results.append(StepResult(
+                    workspace_id=ws_id, workspace_name=ws_name,
+                    success=False, error=f"未知操作：{intent.action}",
+                ))
+                continue
+
+            ok, out, err = await self._run_tapd(args)
+            step_results.append(StepResult(
+                workspace_id=ws_id, workspace_name=ws_name,
+                success=ok, data=out, error=err if not ok else None,
+            ))
+
+        return self._merge_results(step_results)
+
+    def _merge_results(self, step_results: list[StepResult]) -> ToolResult:
+        """合并多步骤结果。至少 1 步成功即 success=True。"""
+        successful = [r for r in step_results if r.success]
+        failed = [r for r in step_results if not r.success]
+
+        if not successful:
+            errors = [f"{r.workspace_name}: {r.error}" for r in failed]
+            return ToolResult(
+                success=False,
+                data=None,
+                error="；".join(errors),
+            )
+
+        items: list[dict] = []
+        for r in successful:
+            items.append({
+                "workspace_id": r.workspace_id,
+                "workspace_name": r.workspace_name,
+                "data": r.data,
+            })
+
+        summary = f"{len(step_results)} 个项目，{len(successful)} 个成功"
+        if failed:
+            errors = [f"{r.workspace_name}: {r.error}" for r in failed]
+            summary += f"，{len(failed)} 个失败"
+            return ToolResult(
+                success=True,
+                data={"items": items, "summary": summary, "errors": errors},
+            )
+        return ToolResult(
+            success=True,
+            data={"items": items, "summary": summary},
+        )
+
+    async def _execute_svn(self, intent: Intent) -> ToolResult:
+        """执行 SVN 意图（始终 direct 模式）。"""
+        action = intent.action
+        p = intent.params
+
+        path, path_error = self._resolve_svn_path(
+            p.get("path", ""), p.get("project", ""),
+        )
+        if path_error:
+            return ToolResult(success=False, error=path_error)
+
+        if ".." in path.replace("/", "\\"):
+            return ToolResult(success=False, error=f"路径包含路径遍历：{path}")
+
+        is_admin = action == "repocreate"
+        url = p.get("url", "")
+        extra = p.get("extra")
+        extra_args = None
+        if isinstance(extra, dict):
+            extra_args = []
+            for k, v in extra.items():
+                kebab = k.replace("_", "-")
+                if len(kebab) == 1:
+                    extra_args.append(f"-{kebab}")
+                else:
+                    extra_args.append(f"--{kebab}")
+                if v is not True:
+                    extra_args.append(str(v))
+        elif isinstance(extra, list):
+            extra_args = [str(x) for x in extra]
+
+        success, stdout, error = await self._run_svn(
+            command=action, path=path, url=url,
+            extra_args=extra_args, is_admin=is_admin,
+        )
+        if success:
+            return ToolResult(success=True, data=stdout)
+        return ToolResult(success=False, error=error or stdout)
