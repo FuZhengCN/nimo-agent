@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Nimo 是一个 CLI AI Agent，基于 DeepSeek function calling。用户通过自然语言对话执行 TAPD 操作（查项目、需求/任务/缺陷 CRUD、填工时、评论、迭代等）和 SVN 版本控制（查日志、差异对比、更新提交等）。项目目标是实践 AI Agent 开发。
 
+核心架构特点：**编排与执行分离**——LLM 通过意图工具表达"要做什么"，ExecutionEngine 确定性代码负责"怎么执行"，内置 `for_each_workspace` 等可复用执行模式，LLM 不再直接操控 CLI 参数。
+
 ## 项目规则
 
 - **可扩展优先**：Agent 后续会逐步添加新工具，任何设计决策都要考虑可扩展性——写死一个工具名、写死一种参数格式、写死一种返回结构，都是在给未来挖坑。每次写代码时自问：如果再多 5 个工具，这段代码还能工作吗？
@@ -43,13 +45,29 @@ main.py → agent.py → llm/client.py
                    → tools/registry.py
         → config.py
         → display.py
+        → engine.py → tools/registry.py（ToolResult）
 
         → tools/__init__.py (pkgutil 自动发现工具模块)
-            → tools/tapd.py (@register_tool 注册，外部 tapd.exe)
-            → tools/tortoisesvn.py (@register_tool 注册，外部 svn.exe/svnadmin.exe)
+            → tools/tapd.py (@register_tool 注册 tapd_cli，透传 CLI 参数)
+            → tools/tortoisesvn.py (@register_tool 注册 svn，透传 CLI 参数)
+            → tools/tapd_intent.py (@register_tool 注册 tapd_query，意图工具)
+            → tools/svn_intent.py (@register_tool 注册 svn_op，意图工具)
 ```
 
-`main()` 先 `load_config()`，再 `build_agent(config)` + `print_welcome()`，最后进入输入循环。`build_agent()` 调用 `ToolRegistry.init_all(config)` 执行各工具的初始化函数，再构造 `Agent`。
+`main()` 先 `load_config()`，再 `build_agent(config)` + `print_welcome()`，最后进入输入循环。`build_agent()` 先初始化 `ExecutionEngine`，再调用 `ToolRegistry.init_all(config)` 执行各工具的初始化函数，最后构造 `Agent`。
+
+### 两层工具架构
+
+工具分为**透传工具**（旧）和**意图工具**（新），当前共存，system prompt 引导 LLM 优先使用意图工具：
+
+| 类型 | 工具名 | LLM 传参 | 执行方式 |
+|------|--------|---------|---------|
+| 透传 | `tapd_cli` | `{"args": ["timesheet", "list", "--workspace-id", "755"]}` | 直接调 tapd.exe |
+| 透传 | `svn` | `{"command": "log", "path": "...", "extra_args": ["-l", "10"]}` | 直接调 svn.exe |
+| 意图 | `tapd_query` | `{"action": "timesheet_list", "owner": "傅政"}` | 委托 ExecutionEngine |
+| 意图 | `svn_op` | `{"action": "log", "project": "harmony", "extra": {"limit": 10}}` | 委托 ExecutionEngine |
+
+意图工具的参数是结构化字段（`action`、`owner`、`workspace_id` 等），不含 CLI 语法。不传 `workspace_id` 时引擎自动触发 `for_each_workspace` 全覆盖模式。
 
 ### Agent 核心循环
 
@@ -87,7 +105,7 @@ main.py → agent.py → llm/client.py
 
 ### System Prompt
 
-`nimo/prompts/system.md` 定义 LLM 的行为准则和回复格式（已精简至 ~1100 字符，包含反重复查询规则）。`Agent._load_system_prompt()` 通过 `Path(__file__)` 定位文件，读取后追加当前日期（`YYYY年M月D日 星期X`）和可用工具列表，作为 system message 传入每次 LLM 调用。
+`nimo/prompts/system.md` 定义 LLM 的行为准则和回复格式。包含 `## 工具选择` 段，引导 LLM 优先使用 `tapd_query`/`svn_op` 意图工具，仅在不满足需求时回退到 `tapd_cli`/`svn`。`Agent._load_system_prompt()` 通过 `Path(__file__)` 定位文件，读取后追加当前日期和可用工具列表，作为 system message 传入每次 LLM 调用。
 
 ### 外部二进制
 
@@ -113,7 +131,10 @@ main.py → agent.py → llm/client.py
 | `memory/history.py` | `ConversationHistory` 滑动窗口截断 + `_trimmed_buffer` 暂存被 trim 消息 + `get_trimmed()`/`pop_trimmed()` 分离 peek/pop 语义；`from_dict()` 恢复后自动 `_trim()` 确保加载即裁剪；`save()` 原子写入（.tmp → .json 防损坏）；JSON 文件持久化（`~/.nimo/sessions/`） |
 | `memory/profile.py` | `UserProfile` 结构化长期记忆（`dict[str,str]` 键值对），独立于滑动窗口，`~/.nimo/profile.json` 持久化；Agent 在 trim 时调 LLM 提取事实（`_maybe_extract_profile()`），注入到每条消息头部 `[用户信息]` |
 | `tools/registry.py` | `ToolRegistry` 单例 + `@register_tool` 装饰器 + `register_init()`/`init_all()` 通用初始化机制；`reset()` 用于测试隔离 |
-| `tools/tapd.py` | `init_tapd()` 存储配置；唯一工具 `tapd_cli` 调用外部 `tapd.exe` 二进制；`timesheet list` 自动追加 `--limit 200` 防截断；`_validate_args()` 子命令白名单 + 路径遍历校验防止 prompt 注入；**关键**：按人员查工时须用 `--owner <中文显示名>`，不可用 `--filter username=` |
+| `engine.py` | `ExecutionEngine` 单例，编排与执行分离的核心。`execute(intent)` 接收 `Intent` 数据类，按 `tool` 分发到 `_execute_tapd`/`_execute_svn`。TAPD 执行分 direct 和 `for_each_workspace` 两种模式，后者先 `workspace list` 再逐个查询并合并结果（部分成功算成功）。`_run_tapd`/`_run_svn` 原子操作通过 `asyncio.create_subprocess_exec` 调用外部二进制。`Intent`（tool/action/params）和 `StepResult` 均为 dataclass |
+| `tools/tapd.py` | `init_tapd()` 存储配置；工具 `tapd_cli` 透传 CLI 参数调用外部 `tapd.exe`；`timesheet list` 自动追加 `--limit 200`；`_validate_args()` 子命令白名单 + 路径遍历校验；**关键**：按人员查工时须用 `--owner <中文显示名>`，不可用 `--filter username=` |
+| `tools/tapd_intent.py` | 工具 `tapd_query`，结构化参数（action/owner/workspace_id/entity_id 等），构造 `Intent` 后委托 `ExecutionEngine.execute()` |
+| `tools/svn_intent.py` | 工具 `svn_op`，结构化参数（action/path/project/url/extra），构造 `Intent` 后委托 `ExecutionEngine.execute()` |
 | `config.py` | `load_config()` 加载 YAML + `_env_override()` 环境变量覆盖（`LLM_API_KEY`、`TAPD_ACCESS_TOKEN`）；`TortoiseSvnConfig` 支持多项目别名（paths dict + 单项目自动匹配） |
 | `display.py` | `print_welcome(model, cwd, version)` 启动欢迎画面（24bit ANSI 真彩色，6:4 双栏）；`print_response_box(text, token_summary, tool_counts)` 用 `rich.Markdown` + 无色 Theme 渲染回复，仅上下品牌色边框，右上角展示工具调用统计，token 显示在底边框右侧（`P:X C:Y` 格式）；Theme 模块级常量避免每次重建 |
 | `tools/tortoisesvn.py` | `init_tortoisesvn()` 存储配置并注入项目名到工具描述；`svn` 工具参数含 command/path/project/url/extra_args；`_resolve_path()` 三级优先级（显式 path > 项目名 > 单项目自动匹配 > 报错）；`_validate_args()` 命令白名单 + 路径遍历防护；svn 命令用 `svn.exe`，repocreate 用 `svnadmin.exe`；输出自动 GBK/UTF-8 双编码解码 |
@@ -157,4 +178,5 @@ tortoisesvn:
 - **单例 Registry**测试通过 `reset()` 保证隔离
 - **TAPD 工具测试**在模块级 import（`@register_tool` 只触发一次），mock `asyncio.create_subprocess_exec` 验证 CLI 调用；`_validate_args()` 校验逻辑单独测试
 - **SVN 工具测试**同样模式 mock `asyncio.create_subprocess_exec`；覆盖多项目、单项目自动匹配、显式 path 优先级、无配置报错；`_resolve_path()` 和 `_build_args()` 独立测试
-- **Display 模块**测试覆盖常量、ANSI 颜色、边框宽度、行构建、`print_welcome` 端到端输出；`sys.stdout` 操作用 `try/finally` 保护
+- **Engine 测试**通过 mock `asyncio.create_subprocess_exec`，覆盖 direct 模式、`for_each_workspace` 模式（正常/部分失败/全失败）、SVN direct 模式、引擎未初始化、未知 action 等场景。`ExecutionEngine.reset()` 保证测试隔离
+- **意图工具测试**（`test_tapd_intent.py`、`test_svn_intent.py`）验证工具→引擎委托链路，mock subprocess 验证参数传递和结果返回
