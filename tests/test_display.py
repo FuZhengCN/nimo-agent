@@ -1,6 +1,6 @@
 import io
 import sys
-from nimo.display import NIMO_LOGO, COMMAND_TIPS, EXAMPLE_TIPS, _build_top, _build_bottom, _build_row, _color_text, _display_width, print_welcome, print_response_box
+from nimo.display import NIMO_LOGO, COMMAND_TIPS, _build_top, _build_bottom, _build_row, _color_text, _display_width, print_welcome, print_response_box
 
 
 class TestConstants:
@@ -16,13 +16,6 @@ class TestConstants:
 
     def test_command_tips_non_empty(self):
         for tip in COMMAND_TIPS:
-            assert len(tip) > 0
-
-    def test_example_tips_has_entries(self):
-        assert len(EXAMPLE_TIPS) >= 3
-
-    def test_example_tips_non_empty(self):
-        for tip in EXAMPLE_TIPS:
             assert len(tip) > 0
 
 

@@ -35,11 +35,6 @@ COMMAND_TIPS = [
     "/exit 退出程序",
 ]
 
-EXAMPLE_TIPS = [
-    "\"帮我看看有哪些项目\"",
-    "\"给任务1001填4小时工时\"",
-    "\"5分钟后检查我的待办任务\"",
-]
 
 
 def _get_term_width() -> int:
@@ -127,11 +122,6 @@ def _build_right_panel(right_w: int) -> list[str]:
     lines.append(_pad_visible(_color_text("命令", "38;2;242;138;56"), right_w, "left"))
     for cmd in COMMAND_TIPS:
         lines.append(_pad_visible(f"  {cmd}", right_w, "left"))
-    lines.append(" " * right_w)
-    # 示例
-    lines.append(_pad_visible(_color_text("试试这样说", "38;2;242;138;56"), right_w, "left"))
-    for ex in EXAMPLE_TIPS:
-        lines.append(_pad_visible(f"  {ex}", right_w, "left"))
     return lines
 
 
