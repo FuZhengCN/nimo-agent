@@ -12,6 +12,7 @@ from openai import AuthenticationError
 from nimo.config import Config, load_config
 from nimo.agent import Agent
 from nimo.display import print_welcome, print_response_box
+from nimo.engine import ExecutionEngine
 from nimo.tools.schedule import Scheduler
 
 # Import to trigger tool auto-discovery and registration
@@ -166,6 +167,7 @@ def _format_tapd_call(args) -> str:
 
 
 async def build_agent(config: Config) -> Agent:
+    ExecutionEngine.get_instance().init(config)
     await ToolRegistry.get_instance().init_all(config)
     return Agent(config)
 
