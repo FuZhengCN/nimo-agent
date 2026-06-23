@@ -1,6 +1,7 @@
 import os
 import yaml
 from dataclasses import dataclass, field
+from pathlib import Path
 
 
 class ConfigError(Exception):
@@ -52,14 +53,35 @@ def _env_override(key: str, default: str) -> str:
     return os.environ.get(env_key, default)
 
 
-def load_config(path: str = "config.yaml") -> Config:
+def _resolve_config_path(path: str | None) -> str:
+    """解析配置文件路径。
+
+    优先级：
+    1. 显式传入的 path → 直接使用
+    2. NIMO_CONFIG 环境变量 → 直接使用
+    3. 默认值 → 包目录下的 config.yaml（不随 CWD 变化）
+    """
+    if path is not None:
+        return path
+    env_path = os.environ.get("NIMO_CONFIG")
+    if env_path:
+        return env_path
+    pkg_root = Path(__file__).resolve().parent.parent
+    return str(pkg_root / "config.yaml")
+
+
+def load_config(path: str | None = None) -> Config:
+    import logging
+    logger = logging.getLogger(__name__)
+    resolved = _resolve_config_path(path)
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(resolved, "r", encoding="utf-8") as f:
             raw = yaml.safe_load(f)
+        logger.info("已加载配置：%s", os.path.abspath(resolved))
     except FileNotFoundError:
-        raise ConfigError(f"配置文件未找到：{path}")
+        raise ConfigError(f"配置文件未找到：{resolved}")
     except yaml.YAMLError as e:
-        raise ConfigError(f"配置文件 YAML 格式错误 {path}：{e}")
+        raise ConfigError(f"配置文件 YAML 格式错误 {resolved}：{e}")
 
     for section in ["llm", "tapd"]:
         if section not in raw:
@@ -103,4 +125,5 @@ def load_config(path: str = "config.yaml") -> Config:
     schedules = SchedulesConfig(
         enabled=schedules_raw.get("enabled", False),
     )
+    logger.info("定时功能：%s", "已启用" if schedules.enabled else "未启用（schedules.enabled=false）")
     return Config(llm=llm, tapd=tapd, tortoisesvn=tortoisesvn, schedules=schedules)

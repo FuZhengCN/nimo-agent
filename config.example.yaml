@@ -21,3 +21,6 @@ tapd:
 #   paths:
 #     myproject: 'C:\path\to\working\copy'
 #     other: 'D:\other\project'
+
+schedules:
+  enabled: false  # 设为 true 以启用定时任务功能
