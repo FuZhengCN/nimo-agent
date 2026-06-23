@@ -1,5 +1,6 @@
 """技能安装器：git clone、卸载、列表。"""
 import logging
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -20,10 +21,13 @@ class Installer:
         if target.exists():
             return f"技能目录已存在：{target}\n如需重装请先 skill uninstall {name}"
 
-        result = subprocess.run(
-            ["git", "clone", url, str(target)],
-            capture_output=True, text=True,
-        )
+        try:
+            result = subprocess.run(
+                ["git", "clone", url, str(target)],
+                capture_output=True, text=True, timeout=300,
+            )
+        except subprocess.TimeoutExpired:
+            return "git clone 超时（300s），请检查网络或仓库地址"
         if result.returncode != 0:
             return f"git clone 失败：{result.stderr.strip() or result.stdout.strip()}"
 
@@ -36,10 +40,16 @@ class Installer:
         return f"已安装 {name} 到 {target}"
 
     def uninstall(self, name: str) -> str:
-        target = self._skills_dir / name
+        target = (self._skills_dir / name).resolve()
+        skills_root = self._skills_dir.resolve()
+        if not str(target).startswith(str(skills_root) + os.sep):
+            return f"非法的技能名称：{name}"
         if not target.exists():
             return f"技能目录不存在：{target}"
-        shutil.rmtree(target)
+        try:
+            shutil.rmtree(target)
+        except OSError as e:
+            return f"卸载失败：{e}"
         return f"已卸载 {name}"
 
     def list_installed(self) -> list[tuple[str, str]]:
