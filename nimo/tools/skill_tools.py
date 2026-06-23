@@ -60,9 +60,9 @@ async def deactivate_skill() -> ToolResult:
                 "description": "脚本命令行参数",
             },
         },
-        "required": ["skill", "script", "args"],
+        "required": ["skill", "script"],
     },
 )
-async def skill_run(skill: str, script: str, args: list[str]) -> ToolResult:
+async def skill_run(skill: str, script: str, args: list[str] | None = None) -> ToolResult:
     registry = SkillRegistry.get_instance()
-    return await registry.run_script(skill, script, args)
+    return await registry.run_script(skill, script, args or [])
