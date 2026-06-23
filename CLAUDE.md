@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Nimo 是一个 CLI AI Agent，基于 DeepSeek function calling。用户通过自然语言对话执行 TAPD 操作（查项目、需求/任务/缺陷 CRUD、填工时、评论、迭代等）和 SVN 版本控制（查日志、差异对比、更新提交等）。项目目标是实践 AI Agent 开发。
 
-核心架构特点：**编排与执行分离**——LLM 通过意图工具表达"要做什么"，ExecutionEngine 确定性代码负责"怎么执行"，内置 `for_each_workspace` 等可复用执行模式，LLM 不再直接操控 CLI 参数。
+核心架构特点：**编排与执行分离**——LLM 通过意图工具表达"要做什么"，ExecutionEngine 确定性代码负责"怎么执行"，内置 `for_each_workspace` 等可复用执行模式，LLM 不再直接操控 CLI 参数。**Skill 系统**支持从 GitHub 安装外部领域能力包，三级格式降级解析，渐进式披露（L1 元数据 → L2 指令注入 → L3 脚本执行）。
 
 ## 项目规则
 
@@ -43,6 +43,7 @@ pytest tests/test_config.py::test_load_config_from_yaml -v
 main.py → agent.py → llm/client.py
                    → memory/history.py
                    → tools/registry.py
+                   → skill/registry.py → tools/registry.py（ToolResult）
         → config.py
         → display.py
         → engine.py → tools/registry.py（ToolResult）
@@ -52,6 +53,7 @@ main.py → agent.py → llm/client.py
             → tools/tortoisesvn.py (@register_tool 注册 svn，透传 CLI 参数)
             → tools/tapd_intent.py (@register_tool 注册 tapd_query，意图工具)
             → tools/svn_intent.py (@register_tool 注册 svn_op，意图工具)
+            → tools/skill_tools.py (@register_tool 注册 activate_skill/deactivate_skill/skill_run)
 ```
 
 `main()` 先 `load_config()`，再 `build_agent(config)` + `print_welcome()`，最后进入输入循环。`build_agent()` 先初始化 `ExecutionEngine`，再调用 `ToolRegistry.init_all(config)` 执行各工具的初始化函数，最后构造 `Agent`。
@@ -94,6 +96,30 @@ main.py → agent.py → llm/client.py
 | `/clear` | 调用 `agent.clear_history()` 清空内存消息并删除持久化文件 |
 | `/clear-profile` | 调用 `agent.clear_profile()` 清空长期用户档案 |
 | `/exit` | 调用 `agent.save_history()` 落盘后退出 |
+| `skill install <url>` | git clone 外部 Skill 到 `~/.nimo/skills/` |
+| `skill list` | 列出已安装的 Skill |
+| `skill uninstall <name>` | 删除已安装的 Skill |
+
+### Skill 系统
+
+外部 Skill 是**自包含的领域能力包**，从 GitHub clone 到 `~/.nimo/skills/` 后即插即用。Skill 不替代 Tool，而是另一个维度——Tool 是"手"，Skill 是"方法论"。
+
+**Skill 目录结构**（兼容 WorkBuddy `skill.yml` 和 Claude Code `SKILL.md` frontmatter 两种格式）：
+```
+~/.nimo/skills/zhengxi-views/
+├── skill.yml       ← WorkBuddy 格式清单（name/description/keywords/scripts）
+├── SKILL.md        ← 行为指令（激活后注入 system prompt）
+├── scripts/        ← 可执行脚本（通过 skill_run 工具调用）
+└── references/     ← 知识库文件
+```
+
+**三级降级解析**：`SkillRegistry.discover()` 按优先级尝试解析——① `skill.yml` → ② `SKILL.md` YAML frontmatter → ③ 目录名 + README.md 兜底。永不加载失败。
+
+**渐进式披露**：L1 元数据始终在 system prompt（~100 字/Skill）→ L2 完整指令在激活后注入 → L3 脚本输出按需获取。避免多 Skill 时撑爆上下文窗口。
+
+**关键设计**：`skill_run` 调用时自动激活 Skill（静默调用 `registry.activate()`），因为 LLM 经常跳过 `activate_skill` 直接调 `skill_run`。激活后的指令在下轮 LLM 调用中生效。
+
+**循环导入注意**：`skill_tools.py` 不能模块级导入 `SkillRegistry`（`nimo.tools` auto-discovery → `skill_tools` → `nimo.skill.registry` → `nimo.tools.registry` 形成循环）。使用 `_get_skill_registry()` 延迟导入。
 
 ### 工具注册系统
 
@@ -138,6 +164,9 @@ main.py → agent.py → llm/client.py
 | `config.py` | `load_config()` 加载 YAML + `_env_override()` 环境变量覆盖（`LLM_API_KEY`、`TAPD_ACCESS_TOKEN`）；`TortoiseSvnConfig` 支持多项目别名（paths dict + 单项目自动匹配） |
 | `display.py` | `print_welcome(model, cwd, version)` 启动欢迎画面（24bit ANSI 真彩色，6:4 双栏）；`print_response_box(text, token_summary, tool_counts)` 用 `rich.Markdown` + 无色 Theme 渲染回复，仅上下品牌色边框，右上角展示工具调用统计，token 显示在底边框右侧（`P:X C:Y` 格式）；Theme 模块级常量避免每次重建 |
 | `tools/tortoisesvn.py` | `init_tortoisesvn()` 存储配置并注入项目名到工具描述；`svn` 工具参数含 command/path/project/url/extra_args；`_resolve_path()` 三级优先级（显式 path > 项目名 > 单项目自动匹配 > 报错）；`_validate_args()` 命令白名单 + 路径遍历防护；svn 命令用 `svn.exe`，repocreate 用 `svnadmin.exe`；输出自动 GBK/UTF-8 双编码解码 |
+| `skill/registry.py` | `SkillRegistry` 单例 + `SkillMeta` 数据类。`discover()` 三级降级解析外部 Skill 目录；`activate()` 加载 SKILL.md 返回摘要；`deactivate()` 清空；`run_script()` 白名单校验 + 路径遍历防护 + `env={}` 环境隔离 + 120s 超时；`list_meta()` 返回 L1 摘要；`get_active_instructions()` 供 Agent 注入 system prompt |
+| `skill/installer.py` | `Installer` 类：`install(url)` git clone + requirements.txt 检测（失败抛 `RuntimeError`）；`uninstall(name)` 路径遍历防护 + `shutil.rmtree`；`list_installed()` 返回已安装 Skill 列表 |
+| `tools/skill_tools.py` | 注册 3 个 LLM 可见工具：`activate_skill`（激活并返回摘要）、`deactivate_skill`（清空激活）、`skill_run`（执行白名单脚本，调用时自动激活 Skill）。**关键**：使用 `_get_skill_registry()` 延迟导入打破循环依赖 |
 
 ### 配置
 
@@ -180,3 +209,4 @@ tortoisesvn:
 - **SVN 工具测试**同样模式 mock `asyncio.create_subprocess_exec`；覆盖多项目、单项目自动匹配、显式 path 优先级、无配置报错；`_resolve_path()` 和 `_build_args()` 独立测试
 - **Engine 测试**通过 mock `asyncio.create_subprocess_exec`，覆盖 direct 模式、`for_each_workspace` 模式（正常/部分失败/全失败）、SVN direct 模式、引擎未初始化、未知 action 等场景。`ExecutionEngine.reset()` 保证测试隔离
 - **意图工具测试**（`test_tapd_intent.py`、`test_svn_intent.py`）验证工具→引擎委托链路，mock subprocess 验证参数传递和结果返回
+- **Skill 系统测试**（`test_skill.py`）通过 `tempfile.TemporaryDirectory` 创建临时 Skill 目录，覆盖 discover 三级降级、activate/deactivate、run_script 安全边界、Installer 列表/卸载/路径遍历。`SkillRegistry.reset()` fixture 保证隔离
