@@ -87,6 +87,7 @@ class SkillRegistry:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=meta.root_dir,
+                env={},
             )
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
         except asyncio.TimeoutError:
