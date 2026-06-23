@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Nimo 是一个 CLI AI Agent，基于 DeepSeek function calling。用户通过自然语言对话执行 TAPD 操作（查项目、需求/任务/缺陷 CRUD、填工时、评论、迭代等）和 SVN 版本控制（查日志、差异对比、更新提交等）。项目目标是实践 AI Agent 开发。
 
-核心架构特点：**编排与执行分离**——LLM 通过意图工具表达"要做什么"，ExecutionEngine 确定性代码负责"怎么执行"，内置 `for_each_workspace` 等可复用执行模式，LLM 不再直接操控 CLI 参数。**Skill 系统**支持从 GitHub 安装外部领域能力包，三级格式降级解析，渐进式披露（L1 元数据 → L2 指令注入 → L3 脚本执行）。
+核心架构特点：**编排与执行分离**——LLM 通过意图工具表达"要做什么"，ExecutionEngine 确定性代码负责"怎么执行"，内置 `for_each_workspace` 等可复用执行模式，LLM 不再直接操控 CLI 参数。**Skill 系统**支持从 GitHub 安装外部领域能力包，三级格式降级解析，渐进式披露（L1 元数据 → L2 指令注入 → L3 脚本执行）。**定时任务系统**支持 cron 和延迟两种模式，后台每 60s 轮询自动触发。
 
 ## 项目规则
 
@@ -54,9 +54,11 @@ main.py → agent.py → llm/client.py
             → tools/tapd_intent.py (@register_tool 注册 tapd_query，意图工具)
             → tools/svn_intent.py (@register_tool 注册 svn_op，意图工具)
             → tools/skill_tools.py (@register_tool 注册 activate_skill/deactivate_skill/skill_run)
+            → tools/python_exec.py (@register_tool 注册 python_exec，动态执行 Python 代码)
+            → tools/schedule.py (@register_tool 注册 schedule，管理定时任务 + Scheduler 后台轮询)
 ```
 
-`main()` 先 `load_config()`，再 `build_agent(config)` + `print_welcome()`，最后进入输入循环。`build_agent()` 先初始化 `ExecutionEngine`，再调用 `ToolRegistry.init_all(config)` 执行各工具的初始化函数，最后构造 `Agent`。
+`main()` 先 `load_config()`，再 `build_agent(config)` + `print_welcome()`，启动 `Scheduler` 后台轮询（若 `schedules.enabled`），最后进入输入循环（`_input_with_poll` 在等待用户输入时轮询调度通知）。`build_agent()` 先初始化 `ExecutionEngine`，再调用 `ToolRegistry.init_all(config)` 执行各工具的初始化函数，最后构造 `Agent`。
 
 ### 两层工具架构
 
@@ -167,6 +169,8 @@ main.py → agent.py → llm/client.py
 | `skill/registry.py` | `SkillRegistry` 单例 + `SkillMeta` 数据类。`discover()` 三级降级解析外部 Skill 目录；`activate()` 加载 SKILL.md 返回摘要；`deactivate()` 清空；`run_script()` 白名单校验 + 路径遍历防护 + `env={}` 环境隔离 + 120s 超时；`list_meta()` 返回 L1 摘要；`get_active_instructions()` 供 Agent 注入 system prompt |
 | `skill/installer.py` | `Installer` 类：`install(url)` git clone + requirements.txt 检测（失败抛 `RuntimeError`）；`uninstall(name)` 路径遍历防护 + `shutil.rmtree`；`list_installed()` 返回已安装 Skill 列表 |
 | `tools/skill_tools.py` | 注册 3 个 LLM 可见工具：`activate_skill`（激活并返回摘要）、`deactivate_skill`（清空激活）、`skill_run`（执行白名单脚本，调用时自动激活 Skill）。**关键**：使用 `_get_skill_registry()` 延迟导入打破循环依赖 |
+| `tools/python_exec.py` | 工具 `python_exec`，接收 `code` 字符串，通过 `asyncio.create_subprocess_exec(sys.executable, "-c", code)` 动态执行 Python 代码，120s 超时。让 LLM 能写代码做数据处理、API 调用等，不与任何 Skill 耦合 |
+| `tools/schedule.py` | 工具 `schedule`（action: list/add/remove/enable/disable），管理定时任务，支持 cron 表达式和 delay_minutes 延迟两种模式，持久化到 `~/.nimo/schedules.json`。`Scheduler` 类在后台每 60s 轮询，到期自动触发 Agent 执行。`main.py` 启动时创建 `Scheduler` 并 `asyncio.create_task` 运行
 
 ### 配置
 
@@ -188,7 +192,7 @@ tapd:
   access_token: "个人令牌"
 ```
 
-`tapd.nick`、`tapd.company_id`、`tapd.owner` 为可选字段。
+`tapd.nick`、`tapd.company_id`、`tapd.owner` 为可选字段。`schedules.enabled` 控制定时任务功能开关（默认 false）。
 
 `tortoisesvn` 段完全可选，用项目别名管理多个工作副本：
 
@@ -210,3 +214,5 @@ tortoisesvn:
 - **Engine 测试**通过 mock `asyncio.create_subprocess_exec`，覆盖 direct 模式、`for_each_workspace` 模式（正常/部分失败/全失败）、SVN direct 模式、引擎未初始化、未知 action 等场景。`ExecutionEngine.reset()` 保证测试隔离
 - **意图工具测试**（`test_tapd_intent.py`、`test_svn_intent.py`）验证工具→引擎委托链路，mock subprocess 验证参数传递和结果返回
 - **Skill 系统测试**（`test_skill.py`）通过 `tempfile.TemporaryDirectory` 创建临时 Skill 目录，覆盖 discover 三级降级、activate/deactivate、run_script 安全边界、Installer 列表/卸载/路径遍历。`SkillRegistry.reset()` fixture 保证隔离
+- **python_exec 测试**（`test_python_exec.py`）mock `asyncio.create_subprocess_exec`，覆盖正常执行、stderr 错误、超时、无输出、工具注册验证
+- **Schedule 测试**（`test_schedule.py`）覆盖 cron 校验（边界值/非法格式）、参数校验（action 白名单/task_id 格式/prompt 长度/cron 与 delay 互斥）、任务 CRUD（add/remove/enable/disable/list）、cron 匹配逻辑、once 任务到期判定
