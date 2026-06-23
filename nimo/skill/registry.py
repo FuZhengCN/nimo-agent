@@ -51,6 +51,57 @@ class SkillRegistry:
     def get_active_instructions(self) -> str | None:
         return self._active_instructions
 
+    def activate(self, name: str) -> str:
+        meta = self._skills.get(name)
+        if meta is None:
+            raise ValueError(f"未找到技能：{name}，可用：{', '.join(self._skills.keys())}")
+        self._active_instructions = meta.instructions
+        script_list = ", ".join(meta.scripts) if meta.scripts else "无"
+        return f"已激活技能「{meta.name}」：{meta.description[:120]}。可用脚本：{script_list}"
+
+    def deactivate(self) -> None:
+        self._active_instructions = None
+
+    async def run_script(self, name: str, script: str, args: list[str]) -> ToolResult:
+        import asyncio
+        import sys
+
+        meta = self._skills.get(name)
+        if meta is None:
+            return ToolResult(success=False, error=f"未找到技能：{name}")
+        if script not in meta.scripts:
+            return ToolResult(
+                success=False,
+                error=f"脚本不在白名单中：{script}，可用：{', '.join(meta.scripts) or '无'}",
+            )
+        if ".." in script.replace("\\", "/"):
+            return ToolResult(success=False, error=f"脚本路径包含路径遍历：{script}")
+
+        script_path = Path(meta.root_dir) / script
+        if not script_path.is_file():
+            return ToolResult(success=False, error=f"脚本文件不存在：{script_path}")
+
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                sys.executable, str(script_path), *args,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=meta.root_dir,
+            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
+        except asyncio.TimeoutError:
+            return ToolResult(success=False, error="脚本执行超时（120s）")
+        except FileNotFoundError:
+            return ToolResult(success=False, error=f"Python 未找到：{sys.executable}")
+        except Exception as e:
+            return ToolResult(success=False, error=str(e))
+
+        out_str = stdout.decode(errors="replace").strip()
+        err_str = stderr.decode(errors="replace").strip()
+        if proc.returncode != 0:
+            return ToolResult(success=False, error=err_str or out_str or f"脚本返回非零退出码 {proc.returncode}")
+        return ToolResult(success=True, data=out_str)
+
     def discover(self, skills_dir: str) -> int:
         root = Path(skills_dir)
         if not root.is_dir():
