@@ -66,4 +66,10 @@ async def deactivate_skill() -> ToolResult:
 )
 async def skill_run(skill: str, script: str, args: list[str] | None = None) -> ToolResult:
     registry = _get_skill_registry()
+    # 自动激活：LLM 经常跳过 activate_skill 直接调 skill_run，
+    # 此处静默激活，确保下一轮 system prompt 中注入技能指令。
+    try:
+        registry.activate(skill)
+    except ValueError:
+        pass
     return await registry.run_script(skill, script, args or [])
