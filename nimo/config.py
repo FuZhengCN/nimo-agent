@@ -71,13 +71,10 @@ def _resolve_config_path(path: str | None) -> str:
 
 
 def load_config(path: str | None = None) -> Config:
-    import logging
-    logger = logging.getLogger(__name__)
     resolved = _resolve_config_path(path)
     try:
         with open(resolved, "r", encoding="utf-8") as f:
             raw = yaml.safe_load(f)
-        logger.info("已加载配置：%s", os.path.abspath(resolved))
     except FileNotFoundError:
         raise ConfigError(f"配置文件未找到：{resolved}")
     except yaml.YAMLError as e:
@@ -125,5 +122,4 @@ def load_config(path: str | None = None) -> Config:
     schedules = SchedulesConfig(
         enabled=schedules_raw.get("enabled", False),
     )
-    logger.info("定时功能：%s", "已启用" if schedules.enabled else "未启用（schedules.enabled=false）")
     return Config(llm=llm, tapd=tapd, tortoisesvn=tortoisesvn, schedules=schedules)
