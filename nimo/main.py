@@ -9,8 +9,12 @@ warnings.filterwarnings("ignore", message=".*Pydantic V1.*", module="openai.*")
 
 from openai import AuthenticationError
 
+from pathlib import Path
+
 from nimo.config import Config, load_config
 from nimo.agent import Agent
+from nimo.skill.registry import SkillRegistry
+from nimo.skill.installer import Installer
 from nimo.display import print_welcome, print_response_box
 from nimo.engine import ExecutionEngine
 from nimo.tools.schedule import Scheduler
@@ -268,6 +272,42 @@ async def main() -> None:
         if user_input.strip() == "/chain":
             print(_format_chain(agent))
             continue
+        skills_dir = str(Path.home() / ".nimo" / "skills")
+        if user_input.strip().startswith("skill "):
+            parts = user_input.strip().split(maxsplit=2)
+            if len(parts) < 2:
+                print("用法：skill install <url> | skill list | skill uninstall <name>")
+                continue
+            cmd = parts[1]
+            if cmd == "install" and len(parts) >= 3:
+                url = parts[2]
+                installer = Installer(skills_dir)
+                result = installer.install(url)
+                print(result)
+                if "已安装" in result:
+                    SkillRegistry.get_instance().discover(skills_dir)
+                    agent._system_prompt = agent._load_system_prompt()
+                continue
+            elif cmd == "list":
+                installer = Installer(skills_dir)
+                skills = installer.list_installed()
+                if skills:
+                    for name, path in skills:
+                        print(f"  {name}  ({path})")
+                else:
+                    print("暂无已安装的技能。\n安装：skill install <github-url>")
+                continue
+            elif cmd == "uninstall" and len(parts) >= 3:
+                name = parts[2]
+                installer = Installer(skills_dir)
+                result = installer.uninstall(name)
+                print(result)
+                SkillRegistry.get_instance().discover(skills_dir)
+                agent._system_prompt = agent._load_system_prompt()
+                continue
+            else:
+                print("用法：skill install <url> | skill list | skill uninstall <name>")
+                continue
         if user_input.strip() == "/help":
             print("""
 可用命令：
@@ -286,6 +326,10 @@ async def main() -> None:
   · 最近谁改过 main.c？
   · 更新工作副本到最新版本
   · 每天早上九点汇总昨日bug修复情况
+
+  · skill install <url>  从 GitHub 安装技能
+  · skill list           查看已安装技能
+  · skill uninstall <名> 卸载技能
 
 所有操作通过自然语言驱动，直接输入即可。""")
             continue
