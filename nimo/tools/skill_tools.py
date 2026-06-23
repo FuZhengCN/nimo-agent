@@ -1,10 +1,11 @@
 """Skill 工具：activate_skill / deactivate_skill / skill_run。"""
-import logging
-
-from nimo.skill.registry import SkillRegistry
 from nimo.tools.registry import register_tool, ToolResult
 
-logger = logging.getLogger(__name__)
+
+def _get_skill_registry():
+    """延迟导入 SkillRegistry，避免循环导入（skill_tools → skill.registry → tools.registry → tools.__init__ → skill_tools）。"""
+    from nimo.skill.registry import SkillRegistry
+    return SkillRegistry.get_instance()
 
 
 @register_tool(
@@ -23,7 +24,7 @@ logger = logging.getLogger(__name__)
     },
 )
 async def activate_skill(name: str) -> ToolResult:
-    registry = SkillRegistry.get_instance()
+    registry = _get_skill_registry()
     try:
         summary = registry.activate(name)
     except ValueError as e:
@@ -37,7 +38,7 @@ async def activate_skill(name: str) -> ToolResult:
     parameters={"type": "object", "properties": {}, "required": []},
 )
 async def deactivate_skill() -> ToolResult:
-    registry = SkillRegistry.get_instance()
+    registry = _get_skill_registry()
     registry.deactivate()
     return ToolResult(success=True, data="已清空激活的技能")
 
@@ -64,5 +65,5 @@ async def deactivate_skill() -> ToolResult:
     },
 )
 async def skill_run(skill: str, script: str, args: list[str] | None = None) -> ToolResult:
-    registry = SkillRegistry.get_instance()
+    registry = _get_skill_registry()
     return await registry.run_script(skill, script, args or [])
