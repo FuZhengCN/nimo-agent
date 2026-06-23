@@ -4,6 +4,7 @@ import logging
 import time
 from collections.abc import Callable
 from pathlib import Path
+from nimo.skill.registry import SkillRegistry
 from nimo.config import Config
 from nimo.llm.client import LLMClient, LLMError
 from nimo.memory.history import ConversationHistory
@@ -36,6 +37,9 @@ class Agent:
         self._config = config
         self._llm_client = LLMClient(config)
         self._registry = ToolRegistry.get_instance()
+        self._skill_registry = SkillRegistry.get_instance()
+        skills_dir = str(Path.home() / ".nimo" / "skills")
+        self._skill_registry.discover(skills_dir)
         self._system_prompt = self._load_system_prompt()
         self._tool_definitions = self._registry.build_tool_definitions()
         if config.llm.history_persist:
@@ -79,6 +83,13 @@ class Agent:
             tool_lines.append(f"- `{name}`：{desc}")
         if tool_lines:
             base += "\n\n## 可用工具\n" + "\n".join(tool_lines)
+        skill_meta = self._skill_registry.list_meta()
+        if skill_meta:
+            lines = ["\n## 可用技能\n"]
+            for m in skill_meta:
+                desc = m["description"][:100] if m["description"] else "无描述"
+                lines.append(f"- `{m['name']}`：{desc}")
+            base += "\n".join(lines)
         return base
 
     async def _trimmed_llm_call(self, trimmed: list[dict], system_prompt: str, existing_summary: str | None = None) -> str:
@@ -155,11 +166,15 @@ class Agent:
             if on_progress:
                 on_progress("分析中...")
             t0 = time.monotonic()
+            system_prompt = self._system_prompt
+            instructions = self._skill_registry.get_active_instructions()
+            if instructions:
+                system_prompt = system_prompt + "\n\n## 已激活技能\n" + instructions
             try:
                 response = await self._llm_client.chat(
                     messages=messages,
                     tools=self._tool_definitions,
-                    system_prompt=self._system_prompt,
+                    system_prompt=system_prompt,
                 )
             except LLMError as e:
                 msg = f"LLM 调用失败：{e}"
@@ -254,10 +269,14 @@ class Agent:
         try:
             messages = self._history.get_messages()
             messages.insert(0, {"role": "system", "content": "已达到工具调用上限。请基于已获取的所有数据，尽最大努力回答用户的问题。如果数据不完整，如实说明哪些信息缺失，不要编造数据。"})
+            system_prompt = self._system_prompt
+            instructions = self._skill_registry.get_active_instructions()
+            if instructions:
+                system_prompt = system_prompt + "\n\n## 已激活技能\n" + instructions
             response = await self._llm_client.chat(
                 messages=messages,
                 tools=[],
-                system_prompt=self._system_prompt,
+                system_prompt=system_prompt,
             )
             if response.usage:
                 usage["prompt"] += response.usage.prompt_tokens
