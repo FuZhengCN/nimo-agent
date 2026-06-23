@@ -137,6 +137,10 @@ class Agent:
     def clear_profile(self) -> None:
         self._profile.clear()
 
+    def reload_system_prompt(self) -> None:
+        """重建 system prompt（技能安装/卸载后调用）。"""
+        self._system_prompt = self._load_system_prompt()
+
     @property
     def last_usage(self) -> dict[str, int] | None:
         return self._last_usage

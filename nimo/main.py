@@ -282,11 +282,13 @@ async def main() -> None:
             if cmd == "install" and len(parts) >= 3:
                 url = parts[2]
                 installer = Installer(skills_dir)
-                result = installer.install(url)
-                print(result)
-                if "已安装" in result:
+                try:
+                    result = installer.install(url)
+                    print(result)
                     SkillRegistry.get_instance().discover(skills_dir)
-                    agent._system_prompt = agent._load_system_prompt()
+                    agent.reload_system_prompt()
+                except RuntimeError as e:
+                    print(str(e))
                 continue
             elif cmd == "list":
                 installer = Installer(skills_dir)
@@ -302,8 +304,9 @@ async def main() -> None:
                 installer = Installer(skills_dir)
                 result = installer.uninstall(name)
                 print(result)
-                SkillRegistry.get_instance().discover(skills_dir)
-                agent._system_prompt = agent._load_system_prompt()
+                if "已卸载" in result:
+                    SkillRegistry.get_instance().discover(skills_dir)
+                    agent.reload_system_prompt()
                 continue
             else:
                 print("用法：skill install <url> | skill list | skill uninstall <name>")

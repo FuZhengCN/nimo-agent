@@ -19,7 +19,7 @@ class Installer:
             name = name[:-4]
         target = self._skills_dir / name
         if target.exists():
-            return f"技能目录已存在：{target}\n如需重装请先 skill uninstall {name}"
+            raise RuntimeError(f"技能目录已存在：{target}\n如需重装请先 skill uninstall {name}")
 
         try:
             result = subprocess.run(
@@ -27,9 +27,10 @@ class Installer:
                 capture_output=True, text=True, timeout=300,
             )
         except subprocess.TimeoutExpired:
-            return "git clone 超时（300s），请检查网络或仓库地址"
+            raise RuntimeError("git clone 超时（300s），请检查网络或仓库地址")
+
         if result.returncode != 0:
-            return f"git clone 失败：{result.stderr.strip() or result.stdout.strip()}"
+            raise RuntimeError(f"git clone 失败：{result.stderr.strip() or result.stdout.strip()}")
 
         req_path = target / "requirements.txt"
         if req_path.is_file():
