@@ -43,5 +43,16 @@ async def python_exec(code: str) -> ToolResult:
     out_str = stdout.decode(errors="replace").strip()
     err_str = stderr.decode(errors="replace").strip()
     if proc.returncode != 0:
+        # 精简 Python traceback：只保留用户代码行 + 最终错误信息
+        if err_str.startswith("Traceback"):
+            lines = err_str.strip().split("\n")
+            last_line = lines[-1].strip()
+            user_line = ""
+            for line in lines:
+                if '<string>' in line:
+                    user_line = line.strip()
+                    break
+            parts = [p for p in (user_line, last_line) if p]
+            err_str = "\n".join(parts) if parts else last_line
         return ToolResult(success=False, error=err_str or out_str or f"退出码 {proc.returncode}")
     return ToolResult(success=True, data=out_str if out_str else "(无输出)")
