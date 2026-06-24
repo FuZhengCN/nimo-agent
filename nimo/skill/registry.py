@@ -19,6 +19,7 @@ class SkillMeta:
     keywords: list[str] = field(default_factory=list)
     scripts: list[str] = field(default_factory=list)
     root_dir: str = ""
+    sections: dict[str, str] = field(default_factory=dict)
 
 
 class SkillRegistry:
@@ -44,6 +45,7 @@ class SkillRegistry:
                 "name": m.name,
                 "description": m.description,
                 "keywords": m.keywords,
+                "sections": [k for k in m.sections if not k.startswith("_")],
             }
             for m in self._skills.values()
         ]
@@ -51,11 +53,27 @@ class SkillRegistry:
     def get_active_instructions(self) -> str | None:
         return self._active_instructions
 
-    def activate(self, name: str) -> str:
+    def get_section_toc(self, name: str) -> list[str]:
+        """返回指定技能的章节标题列表（不含 _preface）。"""
+        meta = self._skills.get(name)
+        if meta is None:
+            return []
+        return [k for k in meta.sections if not k.startswith("_")]
+
+    def activate(self, name: str, sections: list[str] | None = None) -> str:
         meta = self._skills.get(name)
         if meta is None:
             raise ValueError(f"未找到技能：{name}，可用：{', '.join(self._skills.keys())}")
-        self._active_instructions = meta.instructions
+        if sections and meta.sections:
+            parts = []
+            if "_preface" in meta.sections:
+                parts.append(meta.sections["_preface"])
+            for s in sections:
+                if s in meta.sections:
+                    parts.append(f"## {s}\n\n{meta.sections[s]}")
+            self._active_instructions = "\n\n".join(parts) if parts else meta.instructions
+        else:
+            self._active_instructions = meta.instructions
         script_list = ", ".join(meta.scripts) if meta.scripts else "无"
         return f"已激活技能「{meta.name}」：{meta.description[:120]}。可用脚本：{script_list}"
 
@@ -130,6 +148,8 @@ class SkillRegistry:
         try:
             with open(yml_path, "r", encoding="utf-8") as f:
                 data = yaml.safe_load(f)
+        except FileNotFoundError:
+            return None
         except Exception:
             logger.warning("skill.yml 解析失败: %s", yml_path, exc_info=True)
             return None
@@ -142,7 +162,10 @@ class SkillRegistry:
         instructions_path = dir_ / instructions_file
         instructions = ""
         if instructions_path.is_file():
-            instructions = instructions_path.read_text(encoding="utf-8")
+            try:
+                instructions = instructions_path.read_text(encoding="utf-8")
+            except Exception:
+                logger.warning("指令文件读取失败: %s", instructions_path, exc_info=True)
 
         keywords = data.get("keywords", [])
         if isinstance(keywords, str):
@@ -154,16 +177,22 @@ class SkillRegistry:
         if not scripts:
             scripts = self._scan_scripts(dir_)
 
+        sections = self._parse_sections(instructions)
         return SkillMeta(
             name=name, description=description, instructions=instructions,
             keywords=keywords, scripts=scripts, root_dir=str(dir_),
+            sections=sections,
         )
 
     def _try_skill_md_frontmatter(self, dir_: Path) -> SkillMeta | None:
         md_path = dir_ / "SKILL.md"
         if not md_path.is_file():
             return None
-        content = md_path.read_text(encoding="utf-8")
+        try:
+            content = md_path.read_text(encoding="utf-8")
+        except Exception:
+            logger.warning("SKILL.md 读取失败: %s", md_path, exc_info=True)
+            return None
         if not content.startswith("---"):
             return None
         end = content.find("---", 3)
@@ -186,10 +215,12 @@ class SkillRegistry:
             keywords = [k.strip() for k in keywords.split(",")]
 
         scripts = self._scan_scripts(dir_)
+        sections = self._parse_sections(instructions)
 
         return SkillMeta(
             name=name, description=description, instructions=instructions,
             keywords=keywords, scripts=scripts, root_dir=str(dir_),
+            sections=sections,
         )
 
     def _fallback_minimal(self, dir_: Path) -> SkillMeta:
@@ -197,18 +228,23 @@ class SkillRegistry:
         description = ""
         instructions = ""
         readme = dir_ / "README.md"
-        if readme.is_file():
-            instructions = readme.read_text(encoding="utf-8")
-        else:
-            md_files = list(dir_.glob("*.md"))
-            if md_files:
-                instructions = md_files[0].read_text(encoding="utf-8")
+        try:
+            if readme.is_file():
+                instructions = readme.read_text(encoding="utf-8")
+            else:
+                md_files = list(dir_.glob("*.md"))
+                if md_files:
+                    instructions = md_files[0].read_text(encoding="utf-8")
+        except Exception:
+            logger.warning("兜底解析读取失败: %s", dir_, exc_info=True)
 
         scripts = self._scan_scripts(dir_)
+        sections = self._parse_sections(instructions)
 
         return SkillMeta(
             name=name, description=description, instructions=instructions,
             keywords=[], scripts=scripts, root_dir=str(dir_),
+            sections=sections,
         )
 
     def _scan_scripts(self, dir_: Path) -> list[str]:
@@ -219,3 +255,30 @@ class SkillRegistry:
             str(p.relative_to(dir_))
             for p in sorted(scripts_dir.rglob("*.py"))
         ]
+
+    @staticmethod
+    def _parse_sections(content: str) -> dict[str, str]:
+        """按 ## 标题分割 markdown，返回 {标题: 内容} 字典。"""
+        sections: dict[str, str] = {}
+        parts = content.split("\n## ")
+        if not parts:
+            return sections
+        first = parts[0]
+        # 第一部分可能以 ##  开头（内容从行首就是标题），也可能是不含标题的前言
+        if first.startswith("## "):
+            lines = first[3:].split("\n", 1)
+            header = lines[0].strip()
+            if header:
+                sections[header] = lines[1].strip() if len(lines) > 1 else ""
+        elif first.strip():
+            sections["_preface"] = first.strip()
+        for i, part in enumerate(parts[1:], 1):
+            lines = part.split("\n", 1)
+            header = lines[0].strip()
+            body = lines[1].strip() if len(lines) > 1 else ""
+            if not header:
+                continue
+            if header in sections:
+                header = f"{header} ({i})"
+            sections[header] = body
+        return sections

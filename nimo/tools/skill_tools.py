@@ -11,7 +11,8 @@ def _get_skill_registry():
 @register_tool(
     name="activate_skill",
     description="激活指定技能以获取领域知识和操作指南。激活后下一轮对话起技能指令将生效。"
-                "当前轮仅返回技能摘要（含可用脚本列表）。",
+                "当前轮仅返回技能摘要（含可用脚本列表）。"
+                "大型技能可通过 sections 参数指定要加载的章节，减少上下文占用。",
     parameters={
         "type": "object",
         "properties": {
@@ -19,14 +20,19 @@ def _get_skill_registry():
                 "type": "string",
                 "description": "技能名称（见 system prompt 中可用技能列表）",
             },
+            "sections": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "要加载的章节标题列表（见 system prompt 中各技能的章节目录）。不传则加载全部。",
+            },
         },
         "required": ["name"],
     },
 )
-async def activate_skill(name: str) -> ToolResult:
+async def activate_skill(name: str, sections: list[str] | None = None) -> ToolResult:
     registry = _get_skill_registry()
     try:
-        summary = registry.activate(name)
+        summary = registry.activate(name, sections=sections)
     except ValueError as e:
         return ToolResult(success=False, error=str(e))
     return ToolResult(success=True, data=summary)

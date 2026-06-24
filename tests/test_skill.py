@@ -139,6 +139,100 @@ def test_deactivate_when_none_active():
 
 
 # ---------------------------------------------------------------------------
+# sections 解析 & 分段激活
+# ---------------------------------------------------------------------------
+
+def test_parse_sections():
+    reg = SkillRegistry.get_instance()
+    content = "# 标题\n\n前置内容\n\n## 第一章\n第一章内容\n\n## 第二章\n第二章内容"
+    sections = reg._parse_sections(content)
+    assert "_preface" in sections
+    assert "前置内容" in sections["_preface"]
+    assert "第一章" in sections
+    assert "第一章内容" in sections["第一章"]
+    assert "第二章" in sections
+    assert "第二章内容" in sections["第二章"]
+
+
+def test_discover_skill_with_sections():
+    reg = SkillRegistry.get_instance()
+    with tempfile.TemporaryDirectory() as d:
+        skill_dir = Path(d) / "big-skill"
+        skill_dir.mkdir()
+        md = (
+            "---\nname: big-skill\ndescription: 大型技能\n---\n\n"
+            "## 数据源\n数据源内容\n\n## 工具\n工具内容\n\n## FAQ\n常见问题"
+        )
+        (skill_dir / "SKILL.md").write_text(md, encoding="utf-8")
+        reg.discover(d)
+        meta = reg.list_meta()[0]
+        assert meta["name"] == "big-skill"
+        assert "数据源" in meta["sections"]
+        assert "工具" in meta["sections"]
+        assert "FAQ" in meta["sections"]
+
+
+def test_activate_with_specific_sections():
+    reg = SkillRegistry.get_instance()
+    with tempfile.TemporaryDirectory() as d:
+        skill_dir = Path(d) / "section-skill"
+        skill_dir.mkdir()
+        md = (
+            "---\nname: section-skill\ndescription: 章节测试\n---\n\n"
+            "前置说明\n\n## 行情层\n行情API代码\n\n## 数据层\n数据API代码\n\n## 新闻层\n新闻API代码"
+        )
+        (skill_dir / "SKILL.md").write_text(md, encoding="utf-8")
+        reg.discover(d)
+
+        reg.activate("section-skill", sections=["行情层"])
+        instructions = reg.get_active_instructions()
+        assert instructions is not None
+        assert "行情API代码" in instructions
+        assert "数据API代码" not in instructions
+        assert "新闻API代码" not in instructions
+        # 前置内容应该保留
+        assert "前置说明" in instructions
+
+
+def test_activate_without_sections_loads_all():
+    """不传 sections 时全量加载（向后兼容）。"""
+    reg = SkillRegistry.get_instance()
+    with tempfile.TemporaryDirectory() as d:
+        skill_dir = Path(d) / "full-skill"
+        skill_dir.mkdir()
+        md = (
+            "---\nname: full-skill\ndescription: 全量测试\n---\n\n"
+            "## A\nA内容\n\n## B\nB内容"
+        )
+        (skill_dir / "SKILL.md").write_text(md, encoding="utf-8")
+        reg.discover(d)
+
+        reg.activate("full-skill")
+        instructions = reg.get_active_instructions()
+        assert "A内容" in instructions
+        assert "B内容" in instructions
+
+
+def test_get_section_toc():
+    reg = SkillRegistry.get_instance()
+    with tempfile.TemporaryDirectory() as d:
+        skill_dir = Path(d) / "toc-skill"
+        skill_dir.mkdir()
+        md = (
+            "---\nname: toc-skill\ndescription: 目录测试\n---\n\n"
+            "## Layer 1\n内容1\n\n## Layer 2\n内容2\n\n## FAQ\n问答"
+        )
+        (skill_dir / "SKILL.md").write_text(md, encoding="utf-8")
+        reg.discover(d)
+
+        toc = reg.get_section_toc("toc-skill")
+        assert "Layer 1" in toc
+        assert "Layer 2" in toc
+        assert "FAQ" in toc
+        assert "_preface" not in toc
+
+
+# ---------------------------------------------------------------------------
 # run_script
 # ---------------------------------------------------------------------------
 

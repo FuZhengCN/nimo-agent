@@ -89,6 +89,9 @@ class Agent:
             for m in skill_meta:
                 desc = m["description"][:100] if m["description"] else "无描述"
                 lines.append(f"- `{m['name']}`：{desc}")
+                toc = m.get("sections", [])
+                if toc:
+                    lines.append(f"  → 章节：{'、'.join(toc[:12])}{'...' if len(toc) > 12 else ''}")
             base += "\n".join(lines)
         return base
 
