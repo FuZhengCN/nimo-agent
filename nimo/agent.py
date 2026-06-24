@@ -87,7 +87,7 @@ class Agent:
         if skill_meta:
             lines = ["\n## 可用技能\n"]
             for m in skill_meta:
-                desc = m["description"][:100] if m["description"] else "无描述"
+                desc = m["description"] if m["description"] else "无描述"
                 lines.append(f"- `{m['name']}`：{desc}")
                 toc = m.get("sections", [])
                 if toc:
