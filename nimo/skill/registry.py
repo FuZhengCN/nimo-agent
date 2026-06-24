@@ -178,6 +178,7 @@ class SkillRegistry:
             scripts = self._scan_scripts(dir_)
 
         sections = self._parse_sections(instructions)
+        keywords = self._enrich_keywords(keywords, sections)
         return SkillMeta(
             name=name, description=description, instructions=instructions,
             keywords=keywords, scripts=scripts, root_dir=str(dir_),
@@ -216,6 +217,7 @@ class SkillRegistry:
 
         scripts = self._scan_scripts(dir_)
         sections = self._parse_sections(instructions)
+        keywords = self._enrich_keywords(keywords, sections)
 
         return SkillMeta(
             name=name, description=description, instructions=instructions,
@@ -240,12 +242,30 @@ class SkillRegistry:
 
         scripts = self._scan_scripts(dir_)
         sections = self._parse_sections(instructions)
+        keywords = self._enrich_keywords([], sections)
 
         return SkillMeta(
             name=name, description=description, instructions=instructions,
-            keywords=[], scripts=scripts, root_dir=str(dir_),
+            keywords=keywords, scripts=scripts, root_dir=str(dir_),
             sections=sections,
         )
+
+    @staticmethod
+    def _enrich_keywords(keywords: list[str], sections: dict[str, str]) -> list[str]:
+        """从章节标题自动提取中文二元组作为关键词兜底。"""
+        if keywords:
+            return keywords
+        if not sections:
+            return keywords
+        import re
+        auto = set()
+        for header in sections:
+            if header.startswith("_"):
+                continue
+            cn = "".join(re.findall(r"[一-鿿]+", header))
+            for i in range(len(cn) - 1):
+                auto.add(cn[i:i + 2])
+        return sorted(a for a in auto if len(a) >= 2)[:30]
 
     def _scan_scripts(self, dir_: Path) -> list[str]:
         scripts_dir = dir_ / "scripts"

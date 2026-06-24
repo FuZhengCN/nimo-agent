@@ -144,6 +144,23 @@ class Agent:
         """重建 system prompt（技能安装/卸载后调用）。"""
         self._system_prompt = self._load_system_prompt()
 
+    def _match_skill_keywords(self, user_input: str) -> list[str]:
+        """检查用户输入是否命中已安装技能，返回匹配的技能名列表。"""
+        if self._skill_registry.get_active_instructions() is not None:
+            return []  # 已有激活技能，不干扰
+        matched = []
+        input_lower = user_input.lower()
+        for name, meta in self._skill_registry._skills.items():
+            # 精确关键词匹配
+            if any(kw.lower() in input_lower for kw in meta.keywords):
+                matched.append(name)
+                continue
+            # 技能名分词匹配（a-stock-data → stock）
+            name_words = set(name.lower().replace("-", " ").replace("_", " ").split())
+            if any(w in input_lower for w in name_words if len(w) >= 2):
+                matched.append(name)
+        return matched
+
     @property
     def last_usage(self) -> dict[str, int] | None:
         return self._last_usage
@@ -153,6 +170,11 @@ class Agent:
         return self._last_tool_counts
 
     async def run(self, user_input: str, on_progress: Callable[[str], None] | None = None) -> str:
+        # 关键词自动提示：用户输入命中技能关键词时，在消息中插入提示
+        matched = self._match_skill_keywords(user_input)
+        if matched:
+            names = "、".join(f"`{n}`" for n in matched)
+            user_input = f"[💡 相关技能：{names}，如需使用请先 activate_skill]\n\n{user_input}"
         self._history.add({"role": "user", "content": user_input})
         trimmed = self._history.get_trimmed()
         await self._maybe_summarize_trimmed(trimmed)
