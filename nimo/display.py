@@ -27,11 +27,16 @@ NIMO_LOGO = [
     " ╚═╝  ╚═══╝ ╚═╝ ╚═╝     ╚═╝  ╚═════╝ ",
 ]
 
+CAPABILITY_SUMMARY = [
+    "TAPD  需求/任务/缺陷 · Wiki · 迭代 · 工时/评论",
+    "SVN   日志/差异/追溯 · 更新/提交 · 合并/信息",
+    "智能  Skill 扩展 · 定时任务 · Python 执行",
+]
+
 COMMAND_TIPS = [
     "/help 查看帮助",
     "/chain 查看上一轮工具调用链",
     "/clear 清除当前对话历史",
-    "/clear-profile 清除长期用户档案",
     "/exit 退出程序",
 ]
 
@@ -112,16 +117,23 @@ def _build_left_panel(model: str, cwd: str, left_w: int) -> list[str]:
     return lines
 
 
+_SECTION_COLOR = "38;2;242;138;56"
+
 def _build_right_panel(right_w: int) -> list[str]:
     """构建右侧面板行列表。"""
     lines = []
-    title = _color_text("Tips for getting started", "38;2;242;138;56")
-    lines.append(_pad_visible(title, right_w, "left"))
+
+    # 能力摘要
+    lines.append(_pad_visible(_color_text("■ 支持的操作", _SECTION_COLOR), right_w, "left"))
+    for cap in CAPABILITY_SUMMARY:
+        lines.append(_pad_visible(f"  {cap}", right_w, "left"))
     lines.append(" " * right_w)
-    # 命令
-    lines.append(_pad_visible(_color_text("命令", "38;2;242;138;56"), right_w, "left"))
-    for cmd in COMMAND_TIPS:
-        lines.append(_pad_visible(f"  {cmd}", right_w, "left"))
+
+    # 命令速查（一行）
+    lines.append(_pad_visible(GRAY + "─" * (right_w - 2) + RESET, right_w, "left"))
+    cmd_line = "  ".join(COMMAND_TIPS)
+    lines.append(_pad_visible(f"{_color_text('■ 命令', _SECTION_COLOR)}  {GRAY}{cmd_line}{RESET}", right_w, "left"))
+
     return lines
 
 

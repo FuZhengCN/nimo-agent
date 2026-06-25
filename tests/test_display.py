@@ -76,7 +76,8 @@ class TestPrintWelcome:
         text = output.getvalue()
 
         assert "Welcome to Nimo!" in text
-        assert "Tips for getting started" in text
+        assert "支持的操作" in text
+        assert "命令" in text
         assert "test-model" in text
         assert "/test/path" in text
         assert "0.1.0" in text
