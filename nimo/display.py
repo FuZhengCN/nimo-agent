@@ -131,6 +131,7 @@ def _build_right_panel(right_w: int) -> list[str]:
 
     # 命令
     lines.append(GRAY + "─" * right_w + RESET)
+    lines.append(" " * right_w)
     lines.append(_pad_visible(_color_text("■ 命令", _SECTION_COLOR), right_w, "left"))
     for cmd in COMMAND_TIPS:
         lines.append(_pad_visible(f"  {cmd}", right_w, "left"))
