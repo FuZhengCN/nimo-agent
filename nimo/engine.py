@@ -23,6 +23,14 @@ _FOR_EACH_ACTIONS = frozenset({
     "task_list", "bug_list", "iteration_list",
 })
 
+_READONLY_COMMANDS = frozenset({
+    "log", "diff", "blame", "info", "properties",
+})
+
+
+def _is_url(s: str) -> bool:
+    return s.startswith(("http://", "https://", "svn://", "svn+ssh://"))
+
 
 @dataclass
 class Intent:
@@ -127,6 +135,8 @@ class ExecutionEngine:
                 args.append(url)
             if path:
                 args.append(path)
+        elif _is_url(path):
+            args.append(path)
         elif path:
             args.append(path)
 
@@ -357,8 +367,14 @@ class ExecutionEngine:
         if path_error:
             return ToolResult(success=False, error=path_error)
 
-        if ".." in path.replace("/", "\\"):
+        if not _is_url(path) and ".." in path.replace("/", "\\"):
             return ToolResult(success=False, error=f"路径包含路径遍历：{path}")
+
+        if _is_url(path) and action not in _READONLY_COMMANDS:
+            return ToolResult(
+                success=False,
+                error=f"{action} 需要本地工作副本，但配置的是远端 URL",
+            )
 
         is_admin = action == "repocreate"
         url = p.get("url", "")

@@ -27,6 +27,26 @@ def sample_config():
 
 
 # ---------------------------------------------------------------------------
+# URL 检测函数测试
+# ---------------------------------------------------------------------------
+
+
+def test_is_url():
+    from nimo import engine
+    assert engine._is_url("https://svn.example.com/repo") is True
+    assert engine._is_url("http://svn.example.com/repo") is True
+    assert engine._is_url("svn://svn.example.com/repo") is True
+    assert engine._is_url("svn+ssh://svn.example.com/repo") is True
+
+
+def test_is_url_local_path():
+    from nimo import engine
+    assert engine._is_url(r"C:\Users\test\repo") is False
+    assert engine._is_url("/home/user/repo") is False
+    assert engine._is_url("") is False
+
+
+# ---------------------------------------------------------------------------
 # Direct 模式测试
 # ---------------------------------------------------------------------------
 
@@ -253,3 +273,44 @@ async def test_svn_direct(sample_config):
         ))
     assert result.success is True
     assert "r123" in str(result.data)
+
+
+@pytest.mark.asyncio
+async def test_svn_url_readonly(sample_config):
+    """引擎 _execute_svn：URL 配置 + 只读命令 log -> 成功调用 svn.exe <URL>。"""
+    sample_config.tortoisesvn = TortoiseSvnConfig(
+        paths={"default": "https://svn.example.com/repo"}
+    )
+    engine = ExecutionEngine.get_instance()
+    engine.init(sample_config)
+
+    mock_proc = MagicMock()
+    mock_proc.returncode = 0
+    mock_proc.communicate = AsyncMock(return_value=(b"r123 | user | log msg", b""))
+
+    with patch("asyncio.create_subprocess_exec", new=AsyncMock(return_value=mock_proc)) as mock_exec:
+        result = await engine.execute(Intent(
+            tool="svn", action="log",
+            params={"project": "default", "extra": {"limit": 5}},
+        ))
+    assert result.success is True
+    assert "r123" in str(result.data)
+    call_args = mock_exec.call_args[0]
+    assert any("https://svn.example.com/repo" in arg for arg in call_args)
+
+
+@pytest.mark.asyncio
+async def test_svn_url_write_error(sample_config):
+    """引擎 _execute_svn：URL 配置 + 写命令 commit -> 返回明确错误。"""
+    sample_config.tortoisesvn = TortoiseSvnConfig(
+        paths={"default": "https://svn.example.com/repo"}
+    )
+    engine = ExecutionEngine.get_instance()
+    engine.init(sample_config)
+
+    result = await engine.execute(Intent(
+        tool="svn", action="commit",
+        params={"project": "default", "extra": {"message": "test"}},
+    ))
+    assert result.success is False
+    assert "本地工作副本" in result.error
