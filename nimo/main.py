@@ -15,7 +15,7 @@ from nimo.config import Config, load_config
 from nimo.agent import Agent
 from nimo.skill.registry import SkillRegistry
 from nimo.skill.installer import Installer
-from nimo.display import print_welcome, print_response_box
+from nimo.display import print_welcome, print_response_box, CYAN
 from nimo.engine import ExecutionEngine
 from nimo.tools.schedule import Scheduler
 
@@ -315,29 +315,29 @@ async def main() -> None:
                 print("用法：skill install <url> | skill list | skill uninstall <name>")
                 continue
         if user_input.strip() == "/help":
-            print("""
-可用命令：
-  /help          查看帮助
-  /chain         查看上一轮工具调用链
-  /clear         清除当前对话历史
-  /clear-profile 清除长期用户档案
-  /exit          退出程序
+            print(f"""
+{CYAN}◆ 命令{RESET}
+  {CYAN}/help{RESET}          查看帮助
+  {CYAN}/chain{RESET}         查看上一轮工具调用链
+  {CYAN}/clear{RESET}         清除当前对话历史
+  {CYAN}/clear-profile{RESET} 清除长期用户档案
+  {CYAN}/exit{RESET}          退出程序
 
-试试这样说：
-  · 帮我看看有哪些项目
-  · 创建一个需求：修复登录页bug
-  · 当前有哪些活跃的迭代
-  · 给任务1001填4小时工时
-  · 看看今天的SVN提交记录
-  · 最近谁改过 main.c？
-  · 更新工作副本到最新版本
-  · 每天早上九点汇总昨日bug修复情况
+{ORANGE}◆ 试试这样说{RESET}
+  {GRAY_MUTED}·{RESET} 帮我看看有哪些项目
+  {GRAY_MUTED}·{RESET} 创建一个需求：修复登录页bug
+  {GRAY_MUTED}·{RESET} 当前有哪些活跃的迭代
+  {GRAY_MUTED}·{RESET} 给任务1001填4小时工时
+  {GRAY_MUTED}·{RESET} 看看今天的SVN提交记录
+  {GRAY_MUTED}·{RESET} 最近谁改过 main.c？
+  {GRAY_MUTED}·{RESET} 更新工作副本到最新版本
+  {GRAY_MUTED}·{RESET} 每天早上九点汇总昨日bug修复情况
 
-  · skill install <url>  从 GitHub 安装技能
-  · skill list           查看已安装技能
-  · skill uninstall <名> 卸载技能
+  {GRAY_MUTED}·{RESET} skill install <url>  从 GitHub 安装技能
+  {GRAY_MUTED}·{RESET} skill list           查看已安装技能
+  {GRAY_MUTED}·{RESET} skill uninstall <名> 卸载技能
 
-所有操作通过自然语言驱动，直接输入即可。""")
+{GRAY_MUTED}所有操作通过自然语言驱动，直接输入即可。{RESET}""")
             continue
         if not user_input.strip():
             continue
