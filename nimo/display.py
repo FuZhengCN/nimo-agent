@@ -119,25 +119,27 @@ def _build_left_panel(model: str, cwd: str, left_w: int) -> list[str]:
 
 _SECTION_COLOR = "38;2;242;138;56"
 
-def _build_right_panel(right_w: int) -> list[str]:
-    """构建右侧面板行列表。"""
+def _build_right_panel(right_w: int, total_lines: int) -> list[str]:
+    """构建右侧面板行列表。分隔线纵向均分面板，内容各自在上下半区内居中。"""
+    mid = total_lines // 2
+
+    upper = [_pad_visible(_color_text("■ 支持的操作", _SECTION_COLOR), right_w, "left")]
+    upper += [_pad_visible(f"  {cap}", right_w, "left") for cap in CAPABILITY_SUMMARY]
+
+    lower = [_pad_visible(_color_text("■ 命令", _SECTION_COLOR), right_w, "left")]
+    lower += [_pad_visible(f"  {cmd}", right_w, "left") for cmd in COMMAND_TIPS]
+
+    def _center_in(lines: list[str], space: int) -> list[str]:
+        before = (space - len(lines)) // 2
+        after = space - len(lines) - before
+        return [" " * right_w] * before + lines + [" " * right_w] * after
+
     lines = []
-
-    # 能力摘要
-    lines.append(_pad_visible(_color_text("■ 支持的操作", _SECTION_COLOR), right_w, "left"))
-    for cap in CAPABILITY_SUMMARY:
-        lines.append(_pad_visible(f"  {cap}", right_w, "left"))
-    lines.append(" " * right_w)
-
-    # 分隔线（居中，60% 宽度）
+    lines += _center_in(upper, mid)
     dash_w = right_w * 3 // 5
     pad = (right_w - dash_w) // 2
     lines.append(" " * pad + GRAY + "─" * dash_w + RESET)
-    lines.append(" " * right_w)
-    lines.append(_pad_visible(_color_text("■ 命令", _SECTION_COLOR), right_w, "left"))
-    for cmd in COMMAND_TIPS:
-        lines.append(_pad_visible(f"  {cmd}", right_w, "left"))
-
+    lines += _center_in(lower, total_lines - mid - 1)
     return lines
 
 
@@ -198,7 +200,7 @@ def print_welcome(model: str, cwd: str, version: str) -> None:
     left_w = term_w - right_w - 3
 
     left_lines = _build_left_panel(model, cwd, left_w)
-    right_lines = _build_right_panel(right_w)
+    right_lines = _build_right_panel(right_w, len(left_lines))
 
     max_lines = max(len(left_lines), len(right_lines))
     while len(left_lines) < max_lines:
