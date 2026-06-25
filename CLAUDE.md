@@ -154,7 +154,7 @@ main.py → agent.py → llm/client.py
 | 模块 | 关键设计 |
 |------|---------|
 | `agent.py` | `Agent.run()` 编排循环：LLM 调用捕获 `LLMError` 防崩溃、`asyncio.gather` 并行执行工具 + 120s 超时、连续 3 次相同调用自动终止；轮数耗尽时最后调一次 LLM（tools=[]）基于已有数据总结，不再直接报错；`_trimmed_llm_call()` 复用；Profile 上下文循环外注入；`last_usage` 属性暴露 token 统计 |
-
+| `main.py` | 输入循环 + 内置命令（`/help` `/chain` `/clear` `/exit`）；`_Spinner` 后台线程进度动画（100ms 旋转 + 实时秒数）；`_input_with_poll` 等待输入期间轮询调度通知；readline 历史支持 |
 | `llm/client.py` | `LLMClient.chat()` 封装 DeepSeek（兼容 OpenAI SDK），4次尝试（1+3重试），仅对 RateLimitError/APITimeoutError/InternalServerError 重试 |
 | `memory/history.py` | `ConversationHistory` 滑动窗口截断 + `_trimmed_buffer` 暂存被 trim 消息 + `get_trimmed()`/`pop_trimmed()` 分离 peek/pop 语义；`from_dict()` 恢复后自动 `_trim()` 确保加载即裁剪；`save()` 原子写入（.tmp → .json 防损坏）；JSON 文件持久化（`~/.nimo/sessions/`） |
 | `memory/profile.py` | `UserProfile` 结构化长期记忆（`dict[str,str]` 键值对），独立于滑动窗口，`~/.nimo/profile.json` 持久化；Agent 在 trim 时调 LLM 提取事实（`_maybe_extract_profile()`），注入到每条消息头部 `[用户信息]` |
@@ -164,7 +164,7 @@ main.py → agent.py → llm/client.py
 | `tools/tapd_intent.py` | 工具 `tapd_query`，结构化参数（action/owner/workspace_id/entity_id 等），构造 `Intent` 后委托 `ExecutionEngine.execute()` |
 | `tools/svn_intent.py` | 工具 `svn_op`，结构化参数（action/path/project/url/extra），构造 `Intent` 后委托 `ExecutionEngine.execute()` |
 | `config.py` | `load_config()` 加载 YAML + `_env_override()` 环境变量覆盖（`LLM_API_KEY`、`TAPD_ACCESS_TOKEN`）；`TortoiseSvnConfig` 支持多项目别名（paths dict + 单项目自动匹配） |
-| `display.py` | `print_welcome(model, cwd, version)` 启动欢迎画面（24bit ANSI 真彩色，6:4 双栏）；`print_response_box(text, token_summary, tool_counts)` 用 `rich.Markdown` + 无色 Theme 渲染回复，仅上下品牌色边框，右上角展示工具调用统计，token 显示在底边框右侧（`P:X C:Y` 格式）；Theme 模块级常量避免每次重建 |
+| `display.py` | **配色体系**：`CYAN`(#30C0E0)品牌蓝=Logo/标题/系统侧结构，`BLUE_DEEP`(#1F9DB8)=框线，`GRAY_MUTED`(#B0B0B0)=元数据，`GRAY_SUBTLE`(#B8B8B8)=低优提示。橙色仅限用户输入提示符 `❯`，红色=错误。`print_welcome()` 6:4 双栏欢迎画面，`print_response_box()` rich Markdown 渲染回复 + 品牌色边框 + Token 统计 |
 | `tools/tortoisesvn.py` | `init_tortoisesvn()` 存储配置并注入项目名到工具描述；`svn` 工具参数含 command/path/project/url/extra_args；`_resolve_path()` 三级优先级（显式 path > 项目名 > 单项目自动匹配 > 报错）；`_validate_args()` 命令白名单 + 路径遍历防护；svn 命令用 `svn.exe`，repocreate 用 `svnadmin.exe`；输出自动 GBK/UTF-8 双编码解码 |
 | `skill/registry.py` | `SkillRegistry` 单例 + `SkillMeta` 数据类。`discover()` 三级降级解析外部 Skill 目录；`activate()` 加载 SKILL.md 返回摘要；`deactivate()` 清空；`run_script()` 白名单校验 + 路径遍历防护 + `env={}` 环境隔离 + 120s 超时；`list_meta()` 返回 L1 摘要；`get_active_instructions()` 供 Agent 注入 system prompt |
 | `skill/installer.py` | `Installer` 类：`install(url)` git clone + requirements.txt 检测（失败抛 `RuntimeError`）；`uninstall(name)` 路径遍历防护 + `shutil.rmtree`；`list_installed()` 返回已安装 Skill 列表 |
