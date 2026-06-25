@@ -3,6 +3,7 @@ import asyncio
 import logging
 import os
 import threading
+import time
 import warnings
 
 warnings.filterwarnings("ignore", message=".*Pydantic V1.*", module="openai.*")
@@ -23,13 +24,74 @@ from nimo.tools.schedule import Scheduler
 import nimo.tools  # noqa: F401
 from nimo.tools import ToolRegistry
 
+# readline 输入历史（可选）
+try:
+    import readline
+except ImportError:
+    try:
+        import pyreadline3 as readline
+    except ImportError:
+        readline = None
+
+if readline is not None:
+    import atexit
+    _HISTFILE = os.path.join(os.path.expanduser("~"), ".nimo_history")
+    try:
+        readline.read_history_file(_HISTFILE)
+        readline.set_history_length(1000)
+    except (FileNotFoundError, OSError):
+        pass
+
+    def _save_rl_history():
+        try:
+            readline.write_history_file(_HISTFILE)
+        except OSError:
+            pass
+
+    atexit.register(_save_rl_history)
+
+
 logger = logging.getLogger(__name__)
 
 ORANGE = "\033[38;2;242;138;56m"        # #F28A38 暖橙 输入提示/标题
 ORANGE_DEEP = "\033[38;2;208;104;24m"   # #D06818 深橙 重要通知
 RED_ERROR = "\033[38;2;224;85;85m"      # #E05555 暖调错误红
-GRAY_MUTED = "\033[38;2;153;153;153m"   # #999999 元数据/加载提示
+GRAY_MUTED = "\033[38;2;176;176;176m"   # #B0B0B0 元数据/加载提示
 RESET = "\033[0m"
+
+
+class _Spinner:
+    """后台线程旋转动画 + 已等待秒数。"""
+
+    _FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+
+    def __init__(self):
+        self._stop = threading.Event()
+        self._msg = ""
+        self._t0 = 0.0
+
+    def _spin(self):
+        i = 0
+        while not self._stop.is_set():
+            elapsed = time.monotonic() - self._t0
+            print(f"\033[2K\r{GRAY_MUTED}{self._FRAMES[i % 10]} {self._msg} ({elapsed:.0f}s){RESET}",
+                  end="", flush=True)
+            i += 1
+            self._stop.wait(0.1)
+
+    def start(self, msg: str):
+        self._stop.clear()
+        self._msg = msg
+        self._t0 = time.monotonic()
+        threading.Thread(target=self._spin, daemon=True).start()
+
+    def update(self, msg: str):
+        self._msg = msg
+        self._t0 = time.monotonic()
+
+    def stop(self):
+        self._stop.set()
+        print("\033[2K\r", end="", flush=True)
 
 
 import json
@@ -344,11 +406,12 @@ async def main() -> None:
         if not user_input.strip():
             continue
         try:
-            def _progress(msg: str) -> None:
-                print(f"{GRAY_MUTED}⏳ {msg}\033[0m\033[K", end="\r")
-
-            response = await agent.run(user_input, on_progress=_progress)
-            print(" " * 40, end="\r")
+            sp = _Spinner()
+            sp.start("分析中...")
+            try:
+                response = await agent.run(user_input, on_progress=sp.update)
+            finally:
+                sp.stop()
             usage = agent.last_usage
             token_str = None
             if usage:

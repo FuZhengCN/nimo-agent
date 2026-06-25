@@ -11,17 +11,17 @@ from rich.style import Style
 from rich.theme import Theme
 
 # ANSI 颜色定义
-CYAN = "\033[38;2;36;168;208m"         # #24A8D0 品牌蓝 Logo/标识
-BLUE_DEEP = "\033[38;2;26;135;163m"    # #1A87A3 深蓝 框线结构
-GRAY_MUTED = "\033[38;2;153;153;153m"  # #999999 元数据文字
-GRAY_SUBTLE = "\033[38;2;170;170;170m" # #AAAAAA 低优先级提示
+CYAN = "\033[38;2;48;192;224m"         # #30C0E0 品牌蓝 Logo/标识
+BLUE_DEEP = "\033[38;2;31;157;184m"    # #1F9DB8 深蓝 框线结构
+GRAY_MUTED = "\033[38;2;176;176;176m"  # #B0B0B0 元数据文字
+GRAY_SUBTLE = "\033[38;2;184;184;184m" # #B8B8B8 低优先级提示
 ORANGE = "\033[38;2;242;138;56m"       # #F28A38 暖橙 标题高亮
 RESET = "\033[0m"
 
 # 段落内颜色代码（不含 \033[ 前缀，供 _color_text 使用）
-C_BLUE = "38;2;36;168;208"
+C_BLUE = "38;2;48;192;224"
 C_ORANGE = "38;2;242;138;56"
-C_MUTED = "38;2;170;170;170"
+C_MUTED = "38;2;184;184;184"
 
 # 预编译 ANSI escape 正则
 _ANSI_RE = re.compile(r"\033\[[0-9;]*m")
@@ -119,7 +119,7 @@ def _build_left_panel(model: str, cwd: str, left_w: int) -> list[str]:
     return lines
 
 
-_SECTION_COLOR = C_ORANGE
+_SECTION_COLOR = C_BLUE
 
 def _build_right_panel(right_w: int, total_lines: int) -> list[str]:
     """构建右侧面板行列表。分隔线纵向均分面板，内容各自在上下半区内居中。"""
@@ -150,8 +150,8 @@ def _build_right_panel(right_w: int, total_lines: int) -> list[str]:
 
 
 _CONTENT_THEME = Theme({
-    "markdown.h1": Style(bold=True, color="#24A8D0"),
-    "markdown.h2": Style(bold=True, color="#24A8D0"),
+    "markdown.h1": Style(bold=True, color="#30C0E0"),
+    "markdown.h2": Style(bold=True, color="#30C0E0"),
     "markdown.h3": Style(bold=True),
     "markdown.h4": Style(bold=True),
     "markdown.h5": Style(bold=True),
