@@ -136,9 +136,7 @@ def _build_right_panel(right_w: int, total_lines: int) -> list[str]:
 
     lines = []
     lines += _center_in(upper, mid)
-    dash_w = right_w * 3 // 5
-    pad = (right_w - dash_w) // 2
-    lines.append(" " * pad + GRAY + "─" * dash_w + RESET)
+    lines.append(GRAY + "─" * right_w + RESET)
     lines += _center_in(lower, total_lines - mid - 1)
     return lines
 
