@@ -10,16 +10,18 @@ from rich.markdown import Markdown
 from rich.style import Style
 from rich.theme import Theme
 
-# ANSI 颜色定义 — 品牌色系
-CYAN = "\033[38;2;36;168;208m"        # #24A8D0 品牌蓝 Logo/标识
-BLUE_DEEP = "\033[38;2;26;135;163m"   # #1A87A3 深蓝 响应框边框
-
-# ANSI 颜色定义 — 中性灰色系
-GRAY = "\033[38;2;90;90;90m"          # #5A5A5A 框线边框
-GRAY_MUTED = "\033[38;2;153;153;153m" # #999999 元数据文字
+# ANSI 颜色定义
+CYAN = "\033[38;2;36;168;208m"         # #24A8D0 品牌蓝 Logo/标识
+BLUE_DEEP = "\033[38;2;26;135;163m"    # #1A87A3 深蓝 框线结构
+GRAY_MUTED = "\033[38;2;153;153;153m"  # #999999 元数据文字
 GRAY_SUBTLE = "\033[38;2;170;170;170m" # #AAAAAA 低优先级提示
-
+ORANGE = "\033[38;2;242;138;56m"       # #F28A38 暖橙 标题高亮
 RESET = "\033[0m"
+
+# 段落内颜色代码（不含 \033[ 前缀，供 _color_text 使用）
+C_BLUE = "38;2;36;168;208"
+C_ORANGE = "38;2;242;138;56"
+C_MUTED = "38;2;170;170;170"
 
 # 预编译 ANSI escape 正则
 _ANSI_RE = re.compile(r"\033\[[0-9;]*m")
@@ -31,12 +33,6 @@ NIMO_LOGO = [
     " ██║╚██╗██║ ██║ ██║╚██╔╝██║ ██║   ██║",
     " ██║ ╚████║ ██║ ██║ ╚═╝ ██║ ╚██████╔╝",
     " ╚═╝  ╚═══╝ ╚═╝ ╚═╝     ╚═╝  ╚═════╝ ",
-]
-
-CAPABILITY_SUMMARY = [
-    "TAPD  需求/任务/缺陷 · Wiki · 迭代 · 工时/评论",
-    "SVN   日志/差异/追溯 · 更新/提交 · 合并/信息",
-    "智能  Skill 扩展 · 定时任务 · Python 执行",
 ]
 
 COMMAND_TIPS = [
@@ -90,17 +86,17 @@ def _build_top(version: str, left_w: int, right_w: int) -> str:
     left_prefix = f"─── Nimo v{version} "
     left = f"╭{left_prefix}{'─' * (left_w - len(left_prefix))}"
     right = f"{'─' * right_w}╮"
-    return f"{GRAY}{left}┬{right}{RESET}"
+    return f"{BLUE_DEEP}{left}┬{right}{RESET}"
 
 
 def _build_bottom(left_w: int, right_w: int) -> str:
     """底部边框：╰────────┴────────╯"""
-    return f"{GRAY}╰{'─' * left_w}┴{'─' * right_w}╯{RESET}"
+    return f"{BLUE_DEEP}╰{'─' * left_w}┴{'─' * right_w}╯{RESET}"
 
 
 def _build_row(left: str, right: str) -> str:
     """中间行：│ left_content │ right_content │"""
-    return f"{GRAY}│{RESET}{left}{GRAY}│{RESET}{right}{GRAY}│{RESET}"
+    return f"{BLUE_DEEP}│{RESET}{left}{BLUE_DEEP}│{RESET}{right}{BLUE_DEEP}│{RESET}"
 
 
 def _build_left_panel(model: str, cwd: str, left_w: int) -> list[str]:
@@ -123,16 +119,22 @@ def _build_left_panel(model: str, cwd: str, left_w: int) -> list[str]:
     return lines
 
 
-_SECTION_COLOR = "38;2;242;138;56"
+_SECTION_COLOR = C_ORANGE
 
 def _build_right_panel(right_w: int, total_lines: int) -> list[str]:
     """构建右侧面板行列表。分隔线纵向均分面板，内容各自在上下半区内居中。"""
     mid = total_lines // 2
 
-    upper = [_pad_visible(_color_text("■ 支持的操作", _SECTION_COLOR), right_w, "left")]
-    upper += [_pad_visible(f"  {cap}", right_w, "left") for cap in CAPABILITY_SUMMARY]
+    sec_op = _color_text("■", C_BLUE) + _color_text(" 支持的操作", _SECTION_COLOR)
+    upper = [_pad_visible(sec_op, right_w, "left")]
+    upper += [
+        _pad_visible(f"  {_color_text('TAPD', _SECTION_COLOR)}  需求/任务/缺陷 · Wiki · 迭代 · 工时/评论", right_w, "left"),
+        _pad_visible(f"  {_color_text('SVN', C_BLUE)}   日志/差异/追溯 · 更新/提交 · 合并/信息", right_w, "left"),
+        _pad_visible(f"  {_color_text('智能', C_MUTED)}  Skill 扩展 · 定时任务 · Python 执行", right_w, "left"),
+    ]
 
-    lower = [_pad_visible(_color_text("■ 命令", _SECTION_COLOR), right_w, "left")]
+    sec_cmd = _color_text("■", C_BLUE) + _color_text(" 命令", _SECTION_COLOR)
+    lower = [_pad_visible(sec_cmd, right_w, "left")]
     lower += [_pad_visible(f"  {cmd}", right_w, "left") for cmd in COMMAND_TIPS]
 
     def _center_in(lines: list[str], space: int) -> list[str]:
@@ -142,7 +144,7 @@ def _build_right_panel(right_w: int, total_lines: int) -> list[str]:
 
     lines = []
     lines += _center_in(upper, mid)
-    lines.append(GRAY + "─" * right_w + RESET)
+    lines.append(BLUE_DEEP + "─" * right_w + RESET)
     lines += _center_in(lower, total_lines - mid - 1)
     return lines
 
