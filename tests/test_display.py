@@ -33,14 +33,14 @@ class TestColorText:
 
 class TestBorderFunctions:
     def test_build_top_contains_version(self):
-        result = _build_top("0.1.0", 50, 37)
-        assert "0.1.0" in result
+        result = _build_top("1.0.0", 50, 37)
+        assert "1.0.0" in result
         assert "╭" in result
         assert "┬" in result
         assert "╮" in result
 
     def test_build_top_total_width(self):
-        result = _build_top("0.1.0", 50, 37)
+        result = _build_top("1.0.0", 50, 37)
         assert _display_width(result) == 90  # 50 + 37 + 3 borders
 
     def test_build_bottom_total_width(self):
@@ -70,7 +70,7 @@ class TestPrintWelcome:
         output = io.StringIO()
         try:
             sys.stdout = output
-            print_welcome(model="test-model", cwd="/test/path", version="0.1.0")
+            print_welcome(model="test-model", cwd="/test/path", version="1.0.0")
         finally:
             sys.stdout = sys.__stdout__
         text = output.getvalue()
@@ -80,7 +80,7 @@ class TestPrintWelcome:
         assert "命令" in text
         assert "test-model" in text
         assert "/test/path" in text
-        assert "0.1.0" in text
+        assert "1.0.0" in text
 
         # Structural assertions
         assert "╭" in text

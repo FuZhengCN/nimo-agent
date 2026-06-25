@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nimo"
-version = "0.1.0"
+version = "1.0.0"
 description = "CLI AI Agent based on DeepSeek function calling for TAPD operations"
 readme = "README.md"
 license = { text = "MIT" }

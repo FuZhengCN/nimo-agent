@@ -309,7 +309,7 @@ async def main() -> None:
     _scheduler = Scheduler(lambda: Agent(config))
     asyncio.create_task(_scheduler.start())
 
-    print_welcome(model=config.llm.model, cwd=os.getcwd(), version="0.1.0")
+    print_welcome(model=config.llm.model, cwd=os.getcwd(), version="1.0.0")
     prompt = f"{ORANGE}❯ "
     while True:
         try:
