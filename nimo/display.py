@@ -21,7 +21,7 @@ RESET = "\033[0m"
 # 段落内颜色代码（不含 \033[ 前缀，供 _color_text 使用）
 C_BLUE = "38;2;48;192;224"
 C_ORANGE = "38;2;242;138;56"
-C_MUTED = "38;2;184;184;184"
+
 
 # 预编译 ANSI escape 正则
 _ANSI_RE = re.compile(r"\033\[[0-9;]*m")
@@ -130,7 +130,7 @@ def _build_right_panel(right_w: int, total_lines: int) -> list[str]:
     upper += [
         _pad_visible(f"  {_color_text('TAPD', _SECTION_COLOR)}  需求/任务/缺陷 · Wiki · 迭代 · 工时/评论", right_w, "left"),
         _pad_visible(f"  {_color_text('SVN', C_BLUE)}   日志/差异/追溯 · 更新/提交 · 合并/信息", right_w, "left"),
-        _pad_visible(f"  {_color_text('智能', C_MUTED)}  Skill 扩展 · 定时任务 · Python 执行", right_w, "left"),
+        _pad_visible(f"  {_color_text('智能', C_BLUE)}  Skill 扩展 · 定时任务 · Python 执行", right_w, "left"),
     ]
 
     sec_cmd = _color_text("■", C_BLUE) + _color_text(" 命令", _SECTION_COLOR)
