@@ -20,11 +20,19 @@ _ALLOWED_COMMANDS = frozenset({
 
 _URL_BEFORE_PATH = frozenset({"switch", "merge", "checkout", "import", "export"})
 
+_READONLY_COMMANDS = frozenset({
+    "log", "diff", "blame", "info", "properties",
+})
+
+
+def _is_url(s: str) -> bool:
+    return s.startswith(("http://", "https://", "svn://", "svn+ssh://"))
+
 
 def _validate_args(command: str, path: str) -> str | None:
     if command not in _ALLOWED_COMMANDS:
         return f"不允许的 SVN 命令：{command}"
-    if path:
+    if path and not _is_url(path):
         if ".." in path.replace("/", "\\"):
             return f"路径包含路径遍历：{path}"
     return None
@@ -42,9 +50,10 @@ def _build_args(command: str, path: str, url: str, extra_args: list[str] | None)
             args.append(url)
         if path:
             args.append(path)
-    else:
-        if path:
-            args.append(path)
+    elif _is_url(path):
+        args.append(path)
+    elif path:
+        args.append(path)
     return args
 
 
@@ -137,6 +146,12 @@ async def svn(
         return ToolResult(success=False, error=path_error)
     if error := _validate_args(command, resolved_path):
         return ToolResult(success=False, error=error)
+
+    if _is_url(resolved_path) and command not in _READONLY_COMMANDS:
+        return ToolResult(
+            success=False,
+            error=f"{command} 需要本地工作副本，但配置的是远端 URL",
+        )
 
     try:
         args = _build_args(command, resolved_path, url, extra_args)

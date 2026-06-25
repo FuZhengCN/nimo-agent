@@ -159,6 +159,12 @@ def test_validate_path_traversal():
     assert "路径遍历" in result
 
 
+def test_validate_skip_url():
+    """URL 路径不应触发路径遍历检查。"""
+    result = nimo.tools.tortoisesvn._validate_args("log", "https://svn.example.com/repo/..")
+    assert result is None
+
+
 def test_validate_valid_commands():
     for cmd in nimo.tools.tortoisesvn._ALLOWED_COMMANDS:
         assert nimo.tools.tortoisesvn._validate_args(cmd, "") is None
@@ -193,3 +199,65 @@ def test_resolve_explicit_path():
         p, err = nimo.tools.tortoisesvn._resolve_path(r"E:\x", "")
         assert p == r"E:\x"
         assert err is None
+
+
+@pytest.mark.asyncio
+async def test_svn_url_log_success():
+    """URL 配置 + 只读命令 log -> URL 被传入 svn.exe。"""
+    url_config = Config(
+        llm=LLMConfig(api_key="sk-test", base_url="https://api.deepseek.com",
+                      model="deepseek-chat", max_tool_rounds=5, history_rounds=10),
+        tapd=TapdConfig(api_base="https://api.tapd.cn", access_token="token123"),
+        tortoisesvn=TortoiseSvnConfig(paths={"default": "https://svn.example.com/repo"}),
+    )
+    mock_proc = MagicMock()
+    mock_proc.returncode = 0
+    mock_proc.communicate = AsyncMock(return_value=(b"r123 | user | log msg", b""))
+
+    with patch.object(nimo.tools.tortoisesvn, "_config", url_config):
+        with patch("asyncio.create_subprocess_exec", new=AsyncMock(return_value=mock_proc)) as mock_exec:
+            result = await nimo.tools.tortoisesvn.svn(command="log")
+            assert result.success is True
+            call_args = mock_exec.call_args[0]
+            assert any("https://svn.example.com/repo" in arg for arg in call_args)
+
+
+# ── URL 写命令报错测试 ──
+
+@pytest.mark.asyncio
+async def test_svn_url_write_error(single_config):
+    """URL 配置 + 写命令 -> 返回明确错误。"""
+    url_config = Config(
+        llm=single_config.llm,
+        tapd=single_config.tapd,
+        tortoisesvn=TortoiseSvnConfig(paths={"default": "https://svn.example.com/repo"}),
+    )
+    with patch.object(nimo.tools.tortoisesvn, "_config", url_config):
+        result = await nimo.tools.tortoisesvn.svn(command="commit", extra_args=["-m", "test"])
+        assert result.success is False
+        assert "本地工作副本" in result.error
+
+
+# ── URL 参数构建测试 ──
+
+@pytest.mark.parametrize("command", ["log", "diff", "blame", "info", "properties"])
+def test_build_args_with_url_readonly(command):
+    """只读命令 + URL -> URL 会被追加到参数列表。"""
+    url = "https://svn.example.com/repo/trunk"
+    args = nimo.tools.tortoisesvn._build_args(command, url, "", None)
+    assert url in args
+
+
+# ── URL 检测测试 ──
+
+def test_is_url():
+    assert nimo.tools.tortoisesvn._is_url("https://svn.example.com/repo") is True
+    assert nimo.tools.tortoisesvn._is_url("http://svn.example.com/repo") is True
+    assert nimo.tools.tortoisesvn._is_url("svn://svn.example.com/repo") is True
+    assert nimo.tools.tortoisesvn._is_url("svn+ssh://svn.example.com/repo") is True
+
+
+def test_is_url_local_path():
+    assert nimo.tools.tortoisesvn._is_url(r"C:\Users\test\repo") is False
+    assert nimo.tools.tortoisesvn._is_url("/home/user/repo") is False
+    assert nimo.tools.tortoisesvn._is_url("") is False
