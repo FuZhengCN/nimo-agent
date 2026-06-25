@@ -25,7 +25,10 @@ from nimo.tools import ToolRegistry
 
 logger = logging.getLogger(__name__)
 
-ORANGE = "\033[38;2;242;138;56m"
+ORANGE = "\033[38;2;242;138;56m"        # #F28A38 暖橙 输入提示/标题
+ORANGE_DEEP = "\033[38;2;208;104;24m"   # #D06818 深橙 重要通知
+RED_ERROR = "\033[38;2;224;85;85m"      # #E05555 暖调错误红
+GRAY_MUTED = "\033[38;2;153;153;153m"   # #999999 元数据/加载提示
 RESET = "\033[0m"
 
 
@@ -193,7 +196,7 @@ _scheduler: Scheduler | None = None
 def _show_notification(n: "Notification") -> None:
     """直接展示通知结果，无需用户确认。"""
     ts = n.completed_at[:16].replace("T", " ")
-    print(f"\n{ORANGE}[!] [{ts}] 定时任务 '{n.task_id}' 完成{RESET}")
+    print(f"\n{ORANGE_DEEP}[!] [{ts}] 定时任务 '{n.task_id}' 完成{RESET}")
     print_response_box(n.full_text)
     print()
 
@@ -340,7 +343,7 @@ async def main() -> None:
             continue
         try:
             def _progress(msg: str) -> None:
-                print(f"\033[90m⏳ {msg}\033[0m\033[K", end="\r")
+                print(f"{GRAY_MUTED}⏳ {msg}\033[0m\033[K", end="\r")
 
             response = await agent.run(user_input, on_progress=_progress)
             print(" " * 40, end="\r")
@@ -357,10 +360,10 @@ async def main() -> None:
             print("\n已取消，输入 /exit 退出")
         except AuthenticationError:
             logger.exception("API Key 认证失败")
-            print(f"\n\033[91mAPI Key 无效，请检查 config.yaml 中的 api_key 是否正确\033[0m")
+            print(f"\n{RED_ERROR}API Key 无效，请检查 config.yaml 中的 api_key 是否正确{RESET}")
         except Exception:
             logging.getLogger(__name__).exception("未预期的错误")
-            print(f"\n\033[91m发生错误，请重试\033[0m")
+            print(f"\n{RED_ERROR}发生错误，请重试{RESET}")
 
 
 if __name__ == "__main__":

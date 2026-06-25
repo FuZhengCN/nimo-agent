@@ -10,9 +10,15 @@ from rich.markdown import Markdown
 from rich.style import Style
 from rich.theme import Theme
 
-# ANSI 颜色定义
-GRAY = "\033[90m"
-CYAN = "\033[38;2;36;168;208m"
+# ANSI 颜色定义 — 品牌色系
+CYAN = "\033[38;2;36;168;208m"        # #24A8D0 品牌蓝 Logo/标识
+BLUE_DEEP = "\033[38;2;26;135;163m"   # #1A87A3 深蓝 响应框边框
+
+# ANSI 颜色定义 — 中性灰色系
+GRAY = "\033[38;2;90;90;90m"          # #5A5A5A 框线边框
+GRAY_MUTED = "\033[38;2;153;153;153m" # #999999 元数据文字
+GRAY_SUBTLE = "\033[38;2;170;170;170m" # #AAAAAA 低优先级提示
+
 RESET = "\033[0m"
 
 # 预编译 ANSI escape 正则
@@ -103,16 +109,16 @@ def _build_left_panel(model: str, cwd: str, left_w: int) -> list[str]:
     lines.append(" " * left_w)
     welcome = _color_text("Welcome to Nimo!", "1")
     lines.append(_pad_visible(welcome, left_w, "center"))
-    desc = f"\033[2mTAPD · SVN{RESET}"
+    desc = f"{GRAY_SUBTLE}TAPD · SVN{RESET}"
     lines.append(_pad_visible(desc, left_w, "center"))
     lines.append(" " * left_w)
     for logo_line in NIMO_LOGO:
         colored = _color_text(logo_line, "38;2;36;168;208")
         lines.append(_pad_visible(colored, left_w, "center"))
     lines.append(" " * left_w)
-    model_line = f"{GRAY}{model}{RESET} · {CYAN}Nimo Agent{RESET}"
+    model_line = f"{GRAY_MUTED}{model}{RESET} · {CYAN}Nimo Agent{RESET}"
     lines.append(_pad_visible(model_line, left_w, "left"))
-    cwd_line = f"{GRAY}{cwd}{RESET}"
+    cwd_line = f"{GRAY_MUTED}{cwd}{RESET}"
     lines.append(_pad_visible(cwd_line, left_w, "left"))
     return lines
 
@@ -142,8 +148,8 @@ def _build_right_panel(right_w: int, total_lines: int) -> list[str]:
 
 
 _CONTENT_THEME = Theme({
-    "markdown.h1": Style(bold=True),
-    "markdown.h2": Style(bold=True),
+    "markdown.h1": Style(bold=True, color="#24A8D0"),
+    "markdown.h2": Style(bold=True, color="#24A8D0"),
     "markdown.h3": Style(bold=True),
     "markdown.h4": Style(bold=True),
     "markdown.h5": Style(bold=True),
@@ -173,16 +179,16 @@ def print_response_box(text: str, token_summary: str | None = None, tool_counts:
         for name, count in sorted(tool_counts.items()):
             short = name.replace("tapd_cli", "tapd").replace("_", " ")
             parts.append(f"{short} x {count}" if count > 1 else short)
-        tool_tag = f" {GRAY}{', '.join(parts)}{RESET} "
+        tool_tag = f" {GRAY_MUTED}{', '.join(parts)}{RESET} "
     tag_vis = _display_width(tool_tag) if tool_tag else 0
     # ╭─ Nimo  = 8 visible，╮ = 1 → dash_len = box_w - 9 - tag_vis
     dash_len = max(0, box_w - 9 - tag_vis)
-    top = f"{CYAN}╭─ Nimo {'─' * dash_len}{tool_tag}{CYAN}╮{RESET}"
+    top = f"{BLUE_DEEP}╭─ Nimo {'─' * dash_len}{tool_tag}{BLUE_DEEP}╮{RESET}"
     if token_summary:
         dash_count = max(0, box_w - 4 - len(token_summary))
-        bottom = f"{CYAN}╰{'─' * dash_count} {GRAY}{token_summary}{CYAN} ╯{RESET}"
+        bottom = f"{BLUE_DEEP}╰{'─' * dash_count} {GRAY_MUTED}{token_summary}{BLUE_DEEP} ╯{RESET}"
     else:
-        bottom = f"{CYAN}╰{'─' * (box_w - 2)}╯{RESET}"
+        bottom = f"{BLUE_DEEP}╰{'─' * (box_w - 2)}╯{RESET}"
 
     print(top)
     for line in rendered.split("\n"):
