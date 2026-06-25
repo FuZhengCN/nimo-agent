@@ -135,7 +135,9 @@ def _build_right_panel(right_w: int, total_lines: int) -> list[str]:
 
     sec_cmd = _color_text("■", C_BLUE) + _color_text(" 命令", _SECTION_COLOR)
     lower = [_pad_visible(sec_cmd, right_w, "left")]
-    lower += [_pad_visible(f"  {cmd}", right_w, "left") for cmd in COMMAND_TIPS]
+    for cmd in COMMAND_TIPS:
+        name, _, desc = cmd.partition(" ")
+        lower.append(_pad_visible(f"  {_color_text(name, C_BLUE)} {desc}", right_w, "left"))
 
     def _center_in(lines: list[str], space: int) -> list[str]:
         before = (space - len(lines)) // 2
