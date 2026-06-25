@@ -274,6 +274,7 @@ async def main() -> None:
             continue
         if user_input.strip() == "/chain":
             print(_format_chain(agent))
+            print()
             continue
         skills_dir = str(Path.home() / ".nimo" / "skills")
         if user_input.strip().startswith("skill "):
@@ -338,6 +339,7 @@ async def main() -> None:
   {GRAY_MUTED}·{RESET} skill uninstall <名> 卸载技能
 
 {GRAY_MUTED}所有操作通过自然语言驱动，直接输入即可。{RESET}""")
+            print()
             continue
         if not user_input.strip():
             continue
