@@ -10,17 +10,24 @@ from rich.markdown import Markdown
 from rich.style import Style
 from rich.theme import Theme
 
-# ANSI 颜色定义
+# ANSI 颜色定义（所有颜色集中管理，其他模块从此导入）
 CYAN = "\033[38;2;48;192;224m"         # #30C0E0 品牌蓝 Logo/标识
 BLUE_DEEP = "\033[38;2;31;157;184m"    # #1F9DB8 深蓝 框线结构
-GRAY_MUTED = "\033[38;2;176;176;176m"  # #B0B0B0 元数据文字
-GRAY_SUBTLE = "\033[38;2;184;184;184m" # #B8B8B8 低优先级提示
-ORANGE = "\033[38;2;242;138;56m"       # #F28A38 暖橙 标题高亮
+GRAY_MUTED = "\033[38;2;200;200;200m"  # #C8C8C8 元数据文字
+GRAY_SUBTLE = "\033[38;2;176;176;176m" # #B0B0B0 低优先级提示
+ORANGE = "\033[38;2;242;138;56m"       # #F28A38 暖橙 输入提示/标题
+ORANGE_DEEP = "\033[38;2;208;104;24m"  # #D06818 深橙 重要通知
+RED_ERROR = "\033[38;2;224;85;85m"     # #E05555 暖调错误红
+GREEN_SUCCESS = "\033[38;2;78;201;176m" # #4EC9B0 成功状态
+YELLOW_WARN = "\033[38;2;232;200;90m"  # #E8C85A 警告状态
 RESET = "\033[0m"
 
 # 段落内颜色代码（不含 \033[ 前缀，供 _color_text 使用）
 C_BLUE = "38;2;48;192;224"
 C_ORANGE = "38;2;242;138;56"
+C_LOGO = "38;2;36;168;208"            # #24A8D0 Logo 文字色
+C_GREEN = "38;2;78;201;176"           # #4EC9B0 成功状态（段落内）
+C_YELLOW = "38;2;232;200;90"          # #E8C85A 警告状态（段落内）
 
 
 # 预编译 ANSI escape 正则
@@ -109,7 +116,7 @@ def _build_left_panel(model: str, cwd: str, left_w: int) -> list[str]:
     lines.append(_pad_visible(desc, left_w, "center"))
     lines.append(" " * left_w)
     for logo_line in NIMO_LOGO:
-        colored = _color_text(logo_line, "38;2;36;168;208")
+        colored = _color_text(logo_line, C_LOGO)
         lines.append(_pad_visible(colored, left_w, "center"))
     lines.append(" " * left_w)
     model_line = f"{GRAY_MUTED}{model}{RESET} · {CYAN}Nimo Agent{RESET}"
@@ -119,21 +126,19 @@ def _build_left_panel(model: str, cwd: str, left_w: int) -> list[str]:
     return lines
 
 
-_SECTION_COLOR = C_BLUE
-
 def _build_right_panel(right_w: int, total_lines: int) -> list[str]:
     """构建右侧面板行列表。分隔线纵向均分面板，内容各自在上下半区内居中。"""
     mid = total_lines // 2
 
-    sec_op = _color_text("■", C_BLUE) + _color_text(" 支持的操作", _SECTION_COLOR)
+    sec_op = _color_text("■", C_BLUE) + _color_text(" 支持的操作", C_BLUE)
     upper = [_pad_visible(sec_op, right_w, "left")]
     upper += [
-        _pad_visible(f"  {_color_text('TAPD', _SECTION_COLOR)}  需求/任务/缺陷 · Wiki · 迭代 · 工时/评论", right_w, "left"),
+        _pad_visible(f"  {_color_text('TAPD', C_BLUE)}  需求/任务/缺陷 · Wiki · 迭代 · 工时/评论", right_w, "left"),
         _pad_visible(f"  {_color_text('SVN', C_BLUE)}   日志/差异/追溯 · 更新/提交 · 合并/信息", right_w, "left"),
         _pad_visible(f"  {_color_text('智能', C_BLUE)}  Skill 扩展 · 定时任务 · Python 执行", right_w, "left"),
     ]
 
-    sec_cmd = _color_text("■", C_BLUE) + _color_text(" 命令", _SECTION_COLOR)
+    sec_cmd = _color_text("■", C_BLUE) + _color_text(" 命令", C_BLUE)
     lower = [_pad_visible(sec_cmd, right_w, "left")]
     for cmd in COMMAND_TIPS:
         name, _, desc = cmd.partition(" ")
