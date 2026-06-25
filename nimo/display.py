@@ -129,8 +129,10 @@ def _build_right_panel(right_w: int) -> list[str]:
         lines.append(_pad_visible(f"  {cap}", right_w, "left"))
     lines.append(" " * right_w)
 
-    # 命令
-    lines.append(GRAY + "─" * right_w + RESET)
+    # 分隔线（居中，60% 宽度）
+    dash_w = right_w * 3 // 5
+    pad = (right_w - dash_w) // 2
+    lines.append(" " * pad + GRAY + "─" * dash_w + RESET)
     lines.append(" " * right_w)
     lines.append(_pad_visible(_color_text("■ 命令", _SECTION_COLOR), right_w, "left"))
     for cmd in COMMAND_TIPS:
