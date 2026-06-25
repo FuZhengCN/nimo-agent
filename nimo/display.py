@@ -105,7 +105,7 @@ def _build_left_panel(model: str, cwd: str, left_w: int) -> list[str]:
     lines.append(" " * left_w)
     welcome = _color_text("Welcome to Nimo!", "1")
     lines.append(_pad_visible(welcome, left_w, "center"))
-    desc = f"{GRAY_SUBTLE}TAPD · SVN{RESET}"
+    desc = f"{GRAY_SUBTLE}Ask. Execute. Done.{RESET}"
     lines.append(_pad_visible(desc, left_w, "center"))
     lines.append(" " * left_w)
     for logo_line in NIMO_LOGO:
