@@ -323,7 +323,7 @@ async def main() -> None:
   {CYAN}/clear-profile{RESET} 清除长期用户档案
   {CYAN}/exit{RESET}          退出程序
 
-{ORANGE}◆ 试试这样说{RESET}
+{CYAN}◆ 试试这样说{RESET}
   {GRAY_MUTED}·{RESET} 帮我看看有哪些项目
   {GRAY_MUTED}·{RESET} 创建一个需求：修复登录页bug
   {GRAY_MUTED}·{RESET} 当前有哪些活跃的迭代
