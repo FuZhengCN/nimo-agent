@@ -41,7 +41,7 @@ def _format_chain(agent: Agent) -> str:
     msgs = agent._history._messages
 
     if not msgs:
-        return "暂无对话历史。"
+        return f"{GRAY_MUTED}暂无对话历史。{RESET}"
 
     last_user_idx = None
     for i in range(len(msgs) - 1, -1, -1):
@@ -49,7 +49,7 @@ def _format_chain(agent: Agent) -> str:
             last_user_idx = i
             break
     if last_user_idx is None:
-        return "暂无用户消息。"
+        return f"{GRAY_MUTED}暂无用户消息。{RESET}"
 
     # 收集 tool_call_id → 工具名和参数
     tc_map: dict[str, dict] = {}
@@ -104,9 +104,9 @@ def _format_chain(agent: Agent) -> str:
         })
 
     if not results:
-        return "上一轮对话没有工具调用。"
+        return f"{GRAY_MUTED}上一轮对话没有工具调用。{RESET}"
 
-    lines = ["\n🔗 工具调用链\n"]
+    lines = [f"\n{CYAN}◆ 工具调用链{RESET}\n"]
 
     result_idx = 0
     total_llm = 0.0
@@ -121,25 +121,25 @@ def _format_chain(agent: Agent) -> str:
 
         if n == 0:
             label = "最终回答" if r == -1 else f"第{r}轮"
-            lines.append(f"  {label}  LLM {llm_t:.1f}s")
+            lines.append(f"  {CYAN}{label}{RESET}  LLM {GRAY_MUTED}{llm_t:.1f}s{RESET}")
             continue
 
-        parallel_hint = f"（{n} 并行）" if n > 1 else ""
-        lines.append(f"  第{r}轮  LLM {llm_t:.1f}s | 工具 {tool_t:.1f}s{parallel_hint}")
+        parallel_hint = f" {GRAY_MUTED}（{n} 并行）{RESET}" if n > 1 else ""
+        lines.append(f"  {CYAN}第{r}轮{RESET}  LLM {GRAY_MUTED}{llm_t:.1f}s{RESET} | 工具 {GRAY_MUTED}{tool_t:.1f}s{RESET}{parallel_hint}")
 
         for j in range(n):
             if result_idx >= len(results):
                 break
             rr = results[result_idx]
             call_str = _format_tool_call(rr["name"], rr["args"])
-            lines.append(f"    {call_str}  →  {rr['result']}")
+            lines.append(f"    {call_str}  {GRAY_MUTED}→  {rr['result']}{RESET}")
             result_idx += 1
 
         lines.append("")
 
     total = total_llm + total_tool
-    lines.append(f"  {'─' * 28}")
-    lines.append(f"  LLM {total_llm:.1f}s | 工具 {total_tool:.1f}s | 总计 {total:.1f}s")
+    lines.append(f"  {GRAY_MUTED}{'─' * 28}{RESET}")
+    lines.append(f"  LLM {GRAY_MUTED}{total_llm:.1f}s{RESET} | 工具 {GRAY_MUTED}{total_tool:.1f}s{RESET} | 总计 {GRAY_MUTED}{total:.1f}s{RESET}")
 
     return "\n".join(lines)
 
