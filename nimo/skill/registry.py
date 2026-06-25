@@ -138,7 +138,6 @@ class SkillRegistry:
             if meta:
                 self._skills[meta.name] = meta
                 count += 1
-                logger.info("发现技能：%s (%s)", meta.name, entry)
         return count
 
     def _try_skill_yml(self, dir_: Path) -> SkillMeta | None:
