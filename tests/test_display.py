@@ -1,22 +1,15 @@
 import io
 import sys
-from nimo.display import NIMO_LOGO, COMMAND_TIPS, _build_top, _build_bottom, _build_row, _color_text, _display_width, print_welcome, print_response_box
+from nimo.display import NIMO_LOGO, _color_text, _display_width, print_welcome, print_response_box
 
 
 class TestConstants:
-    def test_logo_has_6_lines(self):
-        assert len(NIMO_LOGO) == 6
+    def test_logo_has_3_lines(self):
+        assert len(NIMO_LOGO) == 3
 
     def test_logo_lines_non_empty(self):
         for line in NIMO_LOGO:
             assert len(line.strip()) > 0
-
-    def test_command_tips_has_entries(self):
-        assert len(COMMAND_TIPS) >= 2
-
-    def test_command_tips_non_empty(self):
-        for tip in COMMAND_TIPS:
-            assert len(tip) > 0
 
 
 class TestColorText:
@@ -31,40 +24,6 @@ class TestColorText:
         assert result == "\033[36m\033[0m"
 
 
-class TestBorderFunctions:
-    def test_build_top_contains_version(self):
-        result = _build_top("1.0.0", 50, 37)
-        assert "1.0.0" in result
-        assert "╭" in result
-        assert "┬" in result
-        assert "╮" in result
-
-    def test_build_top_total_width(self):
-        result = _build_top("1.0.0", 50, 37)
-        assert _display_width(result) == 90  # 50 + 37 + 3 borders
-
-    def test_build_bottom_total_width(self):
-        result = _build_bottom(50, 37)
-        assert _display_width(result) == 90  # 50 + 37 + 3 borders
-
-    def test_build_bottom_has_corners(self):
-        result = _build_bottom(50, 37)
-        assert "╰" in result
-        assert "┴" in result
-        assert "╯" in result
-
-
-class TestBuildRow:
-    def test_build_row_width_is_90(self):
-        result = _build_row("hello".ljust(50), "world".ljust(37))
-        assert _display_width(result) == 90
-
-    def test_build_row_contains_separators(self):
-        result = _build_row("left".ljust(50), "right".ljust(37))
-        assert "│" in result
-        assert result.count("│") == 3  # left, middle, right
-
-
 class TestPrintWelcome:
     def test_print_welcome_output(self):
         output = io.StringIO()
@@ -75,19 +34,13 @@ class TestPrintWelcome:
             sys.stdout = sys.__stdout__
         text = output.getvalue()
 
-        assert "Welcome to Nimo!" in text
-        assert "支持的操作" in text
-        assert "命令" in text
+        assert "Nimo" in text
         assert "test-model" in text
         assert "/test/path" in text
         assert "1.0.0" in text
-
-        # Structural assertions
-        assert "╭" in text
-        assert "╮" in text
-        assert "╰" in text
-        assert "╯" in text
-        assert len(text.splitlines()) >= 5
+        assert "/help" in text
+        assert "/exit" in text
+        assert len(text.splitlines()) >= 4
 
 
 class TestPrintResponseBox:
