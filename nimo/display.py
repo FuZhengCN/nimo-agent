@@ -32,7 +32,8 @@ _ANSI_RE = re.compile(r"\033\[[0-9;]*m")
 NIMO_LOGO = [
     "  ╭───╮",
     "  │· ·│",
-    "  ╰─▽─╯",
+    "  │ ▽ │",
+    "  ╰───╯",
 ]
 
 _COMMAND_HINTS = "/help 帮助  ·  /chain 调用链  ·  /clear 清除  ·  /exit 退出"
@@ -124,13 +125,14 @@ def print_welcome(model: str, cwd: str, version: str) -> None:
 
     info = [
         f"\033[1mNimo\033[0m {CYAN}v{version}{RESET}",
-        f"{GRAY_MUTED}{model} · Nimo Agent{RESET}",
+        f"{GRAY_MUTED}{model}{RESET}",
+        f"{GRAY_MUTED}Nimo Agent{RESET}",
         f"{GRAY_MUTED}{cwd}{RESET}",
     ]
 
     logo_w = max(_display_width(line) for line in NIMO_LOGO)
 
-    for i in range(3):
+    for i in range(4):
         logo_line = _color_text(NIMO_LOGO[i].ljust(logo_w), C_LOGO)
         print(f"{logo_line}   {info[i]}")
 

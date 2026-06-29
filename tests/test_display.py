@@ -4,8 +4,8 @@ from nimo.display import NIMO_LOGO, _color_text, _display_width, print_welcome, 
 
 
 class TestConstants:
-    def test_logo_has_3_lines(self):
-        assert len(NIMO_LOGO) == 3
+    def test_logo_has_4_lines(self):
+        assert len(NIMO_LOGO) == 4
 
     def test_logo_lines_non_empty(self):
         for line in NIMO_LOGO:
@@ -40,7 +40,7 @@ class TestPrintWelcome:
         assert "1.0.0" in text
         assert "/help" in text
         assert "/exit" in text
-        assert len(text.splitlines()) >= 4
+        assert len(text.splitlines()) >= 5
 
 
 class TestPrintResponseBox:
