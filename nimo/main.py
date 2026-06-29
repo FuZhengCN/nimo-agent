@@ -24,31 +24,20 @@ from nimo.tools.schedule import Scheduler
 import nimo.tools  # noqa: F401
 from nimo.tools import ToolRegistry
 
-# readline 输入历史（可选）
-try:
-    import readline
-except ImportError:
-    try:
-        import pyreadline3 as readline
-    except ImportError:
-        readline = None
+# prompt_toolkit 输入历史（跨平台，方向键正常）
+from prompt_toolkit import PromptSession
+from prompt_toolkit.history import FileHistory
+from prompt_toolkit.formatted_text import ANSI
 
-if readline is not None:
-    import atexit
-    _HISTFILE = os.path.join(os.path.expanduser("~"), ".nimo_history")
-    try:
-        readline.read_history_file(_HISTFILE)
-        readline.set_history_length(1000)
-    except (FileNotFoundError, OSError):
-        pass
+_HISTFILE = os.path.join(os.path.expanduser("~"), ".nimo_history")
+_pt_session: PromptSession | None = None
 
-    def _save_rl_history():
-        try:
-            readline.write_history_file(_HISTFILE)
-        except OSError:
-            pass
 
-    atexit.register(_save_rl_history)
+def _get_pt_session() -> PromptSession:
+    global _pt_session
+    if _pt_session is None:
+        _pt_session = PromptSession(history=FileHistory(_HISTFILE))
+    return _pt_session
 
 
 logger = logging.getLogger(__name__)
@@ -258,14 +247,15 @@ def _show_notification(n: "Notification") -> None:
     print()
 
 
-async def _input_with_poll(prompt: str, sched: Scheduler | None, poll_sec: int = 2) -> str | None:
-    """在等待用户输入期间定期检查调度通知。input() 在线程中执行，不阻塞事件循环。"""
+async def _input_with_poll(prompt_str: str, sched: Scheduler | None, poll_sec: int = 2) -> str | None:
+    """在后台线程中运行 prompt_toolkit 输入，主线程轮询调度通知。
+    通知在输入完成后展示，避免破坏 prompt_toolkit 的终端渲染。"""
     result: list[str | None] = []
     ready = threading.Event()
 
     def _read() -> None:
         try:
-            result.append(input(prompt))
+            result.append(_get_pt_session().prompt(ANSI(prompt_str)))
         except (EOFError, KeyboardInterrupt):
             result.append(None)
         ready.set()
@@ -273,16 +263,19 @@ async def _input_with_poll(prompt: str, sched: Scheduler | None, poll_sec: int =
     thread = threading.Thread(target=_read, daemon=True)
     thread.start()
 
+    pending_notifications: list = []
     loop = asyncio.get_running_loop()
     while not ready.is_set():
         await loop.run_in_executor(None, ready.wait, poll_sec)
         if sched and not ready.is_set():
             for n in sched.pop_notifications():
-                _show_notification(n)
-                # 重新打印提示符
-                print(f"{prompt}", end="", flush=True)
+                pending_notifications.append(n)
 
     thread.join()
+
+    for n in pending_notifications:
+        _show_notification(n)
+
     return result[0]
 
 
