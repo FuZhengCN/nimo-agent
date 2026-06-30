@@ -139,7 +139,7 @@ def print_welcome(model: str, cwd: str, version: str) -> None:
 
     max_w = max(_display_width(line) for line in content_lines)
     pad = 2
-    inner_w = max_w + pad * 2
+    inner_w = max(_get_term_width() - 2, max_w + pad * 2)
 
     print(f"{BLUE_DEEP}╭{'─' * inner_w}╮{RESET}")
     for line in content_lines:
