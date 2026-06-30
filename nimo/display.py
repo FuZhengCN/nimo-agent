@@ -144,6 +144,6 @@ def print_welcome(model: str, cwd: str, version: str) -> None:
     print(f"{BLUE_DEEP}╭{'─' * inner_w}╮{RESET}")
     for line in content_lines:
         dw = _display_width(line)
-        gap = " " * (max_w - dw)
-        print(f"{BLUE_DEEP}│{RESET}{' ' * pad}{line}{gap}{' ' * pad}{BLUE_DEEP}│{RESET}")
+        gap = inner_w - pad * 2 - dw
+        print(f"{BLUE_DEEP}│{RESET}{' ' * pad}{line}{' ' * gap}{BLUE_DEEP}│{RESET}")
     print(f"{BLUE_DEEP}╰{'─' * inner_w}╯{RESET}")
