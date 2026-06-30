@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Nimo 是一个 CLI AI Agent，基于 DeepSeek function calling。用户通过自然语言对话执行 TAPD 操作（查项目、需求/任务/缺陷 CRUD、填工时、评论、迭代等）和 SVN 版本控制（查日志、差异对比、更新提交等）。项目目标是实践 AI Agent 开发。
 
-核心架构特点：**编排与执行分离**——LLM 通过意图工具表达"要做什么"，ExecutionEngine 确定性代码负责"怎么执行"，内置 `for_each_workspace` 等可复用执行模式，LLM 不再直接操控 CLI 参数。**Skill 系统**支持从 GitHub 安装外部领域能力包，三级格式降级解析，渐进式披露（L1 元数据 → L2 指令注入 → L3 脚本执行）。**定时任务系统**支持 cron 和延迟两种模式，后台每 60s 轮询自动触发。**LLM 思考模式已显式关闭**——`deepseek-v4-flash` 默认开启思考模式，Nimo 的工具调用场景是指令式的，不需要推理 token，通过 `extra_body={"thinking": {"type": "disabled"}}` 关闭以降低延迟和成本。
+核心架构特点：**编排与执行分离**——LLM 通过意图工具表达"要做什么"，ExecutionEngine 确定性代码负责"怎么执行"，内置 `for_each_workspace` 等可复用执行模式，LLM 不再直接操控 CLI 参数。**Skill 系统**支持从 GitHub 安装外部领域能力包，三级格式降级解析，渐进式披露（L1 元数据 → L2 指令注入 → L3 脚本执行）。**定时任务系统**支持 cron 和延迟两种模式，后台每 60s 轮询自动触发。
 
 ## 项目规则
 
