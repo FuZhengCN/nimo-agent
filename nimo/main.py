@@ -28,9 +28,13 @@ from nimo.tools import ToolRegistry
 from prompt_toolkit import PromptSession
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.formatted_text import ANSI
+from prompt_toolkit.styles import Style as PTStyle
 
 _HISTFILE = os.path.join(os.path.expanduser("~"), ".nimo_history")
 _pt_session: PromptSession | None = None
+
+# 用户输入文字样式（暖橙 #F28A38，模拟旧 input() 中 ANSI 颜色蔓延效果）
+_INPUT_STYLE = PTStyle.from_dict({"": "fg:#f28a38"})
 
 
 def _get_pt_session() -> PromptSession:
@@ -255,7 +259,7 @@ async def _input_with_poll(prompt_str: str, sched: Scheduler | None, poll_sec: i
 
     def _read() -> None:
         try:
-            result.append(_get_pt_session().prompt(ANSI(prompt_str)))
+            result.append(_get_pt_session().prompt(ANSI(prompt_str), style=_INPUT_STYLE))
         except (EOFError, KeyboardInterrupt):
             result.append(None)
         ready.set()
