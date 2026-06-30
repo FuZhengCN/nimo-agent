@@ -22,7 +22,7 @@
 
 ### config.py
 
-`profile_extract` 配置项保留字段但不再生效（避免 breaking change）。
+删除 `profile_extract` 配置字段。用户若在 `config.yaml` 中配置了此字段，需同步删除，否则 YAML 解析会因未知字段报错。
 
 ## 新增
 
