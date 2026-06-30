@@ -237,9 +237,6 @@ def _format_tool_call(name: str, args) -> str:
 async def build_agent(config: Config) -> Agent:
     ExecutionEngine.get_instance().init(config)
     agent = Agent(config)
-    # 注入 profile 实例到 profile_set 工具
-    from nimo.tools.profile import _set_profile
-    _set_profile(agent._profile)
     await ToolRegistry.get_instance().init_all(config)
     return agent
 

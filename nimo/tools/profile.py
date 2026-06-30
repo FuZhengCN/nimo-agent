@@ -8,10 +8,6 @@ logger = logging.getLogger(__name__)
 _profile: UserProfile | None = None
 
 
-def _get_profile() -> UserProfile | None:
-    return _profile
-
-
 def _set_profile(p: UserProfile | None) -> None:
     global _profile
     _profile = p

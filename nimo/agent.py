@@ -61,6 +61,11 @@ class Agent:
         self._last_tool_counts: dict[str, int] | None = None
         self._last_timings: list[dict] = []
 
+        # 注入 profile 实例到 profile_set 工具模块，确保 Scheduler 创建的
+        # Agent 实例也能被 profile_set 正确引用
+        from nimo.tools.profile import _set_profile
+        _set_profile(self._profile)
+
     def _load_system_prompt(self) -> str:
         from datetime import date
         _WEEKDAYS = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
