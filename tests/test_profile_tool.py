@@ -23,7 +23,7 @@ def _isolate_registry():
 
 
 @pytest.mark.asyncio
-async def test_profile_set_writes(tmp_path):
+async def test_profile_set_writes():
     """验证 profile_set 写入。"""
     from nimo.tools.profile import _set_profile
 
@@ -40,7 +40,7 @@ async def test_profile_set_writes(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_profile_set_overwrites(tmp_path):
+async def test_profile_set_overwrites():
     """验证同名键覆盖。"""
     from nimo.tools.profile import _set_profile
 
@@ -58,7 +58,7 @@ async def test_profile_set_overwrites(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_profile_set_clear_by_empty_value(tmp_path):
+async def test_profile_set_clear_by_empty_value():
     """验证空值删除键。"""
     from nimo.tools.profile import _set_profile
 
@@ -77,7 +77,7 @@ async def test_profile_set_clear_by_empty_value(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_profile_set_returns_error_when_not_injected(tmp_path):
+async def test_profile_set_returns_error_when_not_injected():
     """验证 profile 未注入时返回错误。"""
     from nimo.tools.profile import _set_profile
 

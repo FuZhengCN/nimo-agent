@@ -32,10 +32,7 @@ def _set_profile(p: UserProfile | None) -> None:
 async def profile_set(key: str, value: str) -> ToolResult:
     if _profile is None:
         return ToolResult(success=False, error="用户档案未初始化")
-    try:
-        _profile.update({key: value})
-        _profile.save()
-        logger.info("用户档案已更新：%s = %s", key, value if value else "(已删除)")
-        return ToolResult(success=True, data={"key": key, "value": value})
-    except Exception as e:
-        return ToolResult(success=False, error=str(e))
+    _profile.update({key: value})
+    _profile.save()
+    logger.info("用户档案已更新：%s = %s", key, value if value else "(已删除)")
+    return ToolResult(success=True, data={"key": key, "value": value})
