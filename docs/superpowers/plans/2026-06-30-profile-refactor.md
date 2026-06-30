@@ -95,20 +95,12 @@ llm = LLMConfig(
 )
 ```
 
-- [ ] **Step 6: 删除 agent.py 中顶部不再使用的 json import**
-
-```python
-# nimo/agent.py 第 1-2 行，检查 json 是否还被其他地方使用
-# agent.py 中 _maybe_extract_profile 是唯一使用 json.loads 的地方
-# 删除后 json 不再需要，删除 import json
-```
-
-- [ ] **Step 7: 运行现有测试确认无回归**
+- [ ] **Step 6: 运行现有测试确认无回归**
 
 Run: `pytest tests/test_agent.py tests/test_profile.py tests/test_config.py -v`
 Expected: 全部 PASS
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add nimo/agent.py nimo/config.py
