@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Nimo 是一个 CLI AI Agent，基于 DeepSeek function calling。用户通过自然语言对话执行 TAPD 操作（查项目、需求/任务/缺陷 CRUD、填工时、评论、迭代等）和 SVN 版本控制（查日志、差异对比、更新提交等）。项目目标是实践 AI Agent 开发。
 
-核心架构特点：**编排与执行分离**——LLM 通过意图工具表达"要做什么"，ExecutionEngine 确定性代码负责"怎么执行"，内置 `for_each_workspace` 等可复用执行模式，LLM 不再直接操控 CLI 参数。**Skill 系统**支持从 GitHub 安装外部领域能力包，三级格式降级解析，渐进式披露（L1 元数据 → L2 指令注入 → L3 脚本执行）。**定时任务系统**支持 cron 和延迟两种模式，后台每 60s 轮询自动触发。
+核心架构特点：**编排与执行分离**——LLM 通过意图工具表达"要做什么"，ExecutionEngine 确定性代码负责"怎么执行"，内置 `for_each_workspace` 等可复用执行模式，LLM 不再直接操控 CLI 参数。**Skill 系统**支持从 GitHub 安装外部领域能力包，三级格式降级解析，渐进式披露（L1 元数据 → L2 指令注入 → L3 脚本执行）。**定时任务系统**支持 cron 和延迟两种模式，后台每 60s 轮询自动触发。**LLM 思考模式已显式关闭**——`deepseek-v4-flash` 默认开启思考模式，Nimo 的工具调用场景是指令式的，不需要推理 token，通过 `extra_body={"thinking": {"type": "disabled"}}` 关闭以降低延迟和成本。
 
 ## 项目规则
 
@@ -54,6 +54,7 @@ main.py → agent.py → llm/client.py
             → tools/tapd_intent.py (@register_tool 注册 tapd_query，意图工具)
             → tools/svn_intent.py (@register_tool 注册 svn_op，意图工具)
             → tools/skill_tools.py (@register_tool 注册 activate_skill/deactivate_skill/skill_run)
+            → tools/profile.py (@register_tool 注册 profile_set，用户显式写入个人信息)
             → tools/python_exec.py (@register_tool 注册 python_exec，动态执行 Python 代码)
             → tools/schedule.py (@register_tool 注册 schedule，管理定时任务 + Scheduler 后台轮询)
 ```
@@ -76,7 +77,7 @@ main.py → agent.py → llm/client.py
 ### Agent 核心循环
 
 ```
-用户输入 → 加入历史 → trim buffer（有则调 LLM 摘要压缩 + 提取 Profile）
+用户输入 → 加入历史 → trim buffer（有则调 LLM 摘要压缩） → Profile 上下文注入到消息头部
   ↓
 ┌─ for round in 1..max_tool_rounds:
 │   LLM.chat(messages, tools, system_prompt)
@@ -155,9 +156,9 @@ main.py → agent.py → llm/client.py
 |------|---------|
 | `agent.py` | `Agent.run()` 编排循环：LLM 调用捕获 `LLMError` 防崩溃、`asyncio.gather` 并行执行工具 + 120s 超时、连续 3 次相同调用自动终止；轮数耗尽时最后调一次 LLM（tools=[]）基于已有数据总结，不再直接报错；`_trimmed_llm_call()` 复用；Profile 上下文循环外注入；`last_usage` 属性暴露 token 统计 |
 | `main.py` | 输入循环 + 内置命令（`/help` `/chain` `/clear` `/exit`）；`_Spinner` 后台线程进度动画（100ms 旋转 + 实时秒数）；`_input_with_poll` 等待输入期间轮询调度通知；readline 历史支持 |
-| `llm/client.py` | `LLMClient.chat()` 封装 DeepSeek（兼容 OpenAI SDK），4次尝试（1+3重试），仅对 RateLimitError/APITimeoutError/InternalServerError 重试 |
+| `llm/client.py` | `LLMClient.chat()` 封装 DeepSeek（兼容 OpenAI SDK），4次尝试（1+3重试），仅对 RateLimitError/APITimeoutError/InternalServerError 重试；显式传 `extra_body={"thinking": {"type": "disabled"}}` 关闭 deepseek-v4-flash 默认思考模式 |
 | `memory/history.py` | `ConversationHistory` 滑动窗口截断 + `_trimmed_buffer` 暂存被 trim 消息 + `get_trimmed()`/`pop_trimmed()` 分离 peek/pop 语义；`from_dict()` 恢复后自动 `_trim()` 确保加载即裁剪；`save()` 原子写入（.tmp → .json 防损坏）；JSON 文件持久化（`~/.nimo/sessions/`） |
-| `memory/profile.py` | `UserProfile` 结构化长期记忆（`dict[str,str]` 键值对），独立于滑动窗口，`~/.nimo/profile.json` 持久化；Agent 在 trim 时调 LLM 提取事实（`_maybe_extract_profile()`），注入到每条消息头部 `[用户信息]` |
+| `memory/profile.py` | `UserProfile` 结构化长期记忆（`dict[str,str]` 键值对），独立于滑动窗口，`~/.nimo/profile.json` 持久化；启动时加载，通过 `to_context()` 注入到每条消息头部 `[用户信息]` |
 | `tools/registry.py` | `ToolRegistry` 单例 + `@register_tool` 装饰器 + `register_init()`/`init_all()` 通用初始化机制；`reset()` 用于测试隔离 |
 | `engine.py` | `ExecutionEngine` 单例，编排与执行分离的核心。`execute(intent)` 接收 `Intent` 数据类，按 `tool` 分发到 `_execute_tapd`/`_execute_svn`。TAPD 执行分 direct 和 `for_each_workspace` 两种模式，后者先 `workspace list` 再逐个查询并合并结果（部分成功算成功）。`_run_tapd`/`_run_svn` 原子操作通过 `asyncio.create_subprocess_exec` 调用外部二进制。`Intent`（tool/action/params）和 `StepResult` 均为 dataclass |
 | `tools/tapd.py` | `init_tapd()` 存储配置；工具 `tapd_cli` 透传 CLI 参数调用外部 `tapd.exe`；`timesheet list` 自动追加 `--limit 200`；`_validate_args()` 子命令白名单 + 路径遍历校验；**关键**：按人员查工时须用 `--owner <中文显示名>`，不可用 `--filter username=` |
@@ -169,6 +170,7 @@ main.py → agent.py → llm/client.py
 | `skill/registry.py` | `SkillRegistry` 单例 + `SkillMeta` 数据类。`discover()` 三级降级解析外部 Skill 目录；`activate()` 加载 SKILL.md 返回摘要；`deactivate()` 清空；`run_script()` 白名单校验 + 路径遍历防护 + `env={}` 环境隔离 + 120s 超时；`list_meta()` 返回 L1 摘要；`get_active_instructions()` 供 Agent 注入 system prompt |
 | `skill/installer.py` | `Installer` 类：`install(url)` git clone + requirements.txt 检测（失败抛 `RuntimeError`）；`uninstall(name)` 路径遍历防护 + `shutil.rmtree`；`list_installed()` 返回已安装 Skill 列表 |
 | `tools/skill_tools.py` | 注册 3 个 LLM 可见工具：`activate_skill`（激活并返回摘要）、`deactivate_skill`（清空激活）、`skill_run`（执行白名单脚本，调用时自动激活 Skill）。**关键**：使用 `_get_skill_registry()` 延迟导入打破循环依赖 |
+| `tools/profile.py` | 工具 `profile_set`，用户通过自然语言（"记一下..."）显式写入个人信息（键值对）。Agent 启动时通过 `_set_profile()` 注入实例，Scheduler 创建的 Agent 也能正确引用 |
 | `tools/python_exec.py` | 工具 `python_exec`，接收 `code` 字符串，通过 `asyncio.create_subprocess_exec(sys.executable, "-c", code)` 动态执行 Python 代码，120s 超时。让 LLM 能写代码做数据处理、API 调用等，不与任何 Skill 耦合 |
 | `tools/schedule.py` | 工具 `schedule`（action: list/add/remove/enable/disable），管理定时任务，支持 cron 表达式和 delay_minutes 延迟两种模式，持久化到 `~/.nimo/schedules.json`。`Scheduler` 类在后台每 60s 轮询，到期自动触发 Agent 执行。`main.py` 启动时创建 `Scheduler` 并 `asyncio.create_task` 运行
 
@@ -180,13 +182,12 @@ main.py → agent.py → llm/client.py
 llm:
   api_key: "sk-xxx"
   base_url: "https://api.deepseek.com"
-  model: "deepseek-chat"
+  model: "deepseek-v4-flash"
   max_tool_rounds: 10
   history_rounds: 10
   temperature: 0.3
   history_persist: true     # 会话历史持久化（~/.nimo/sessions/default.json）
   history_summarize: true   # 轮次超限时 LLM 摘要压缩旧消息
-  profile_extract: true     # 从对话中提取用户信息存入长期档案（~/.nimo/profile.json）
 tapd:
   api_base: "https://api.tapd.cn"
   access_token: "个人令牌"
