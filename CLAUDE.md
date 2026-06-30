@@ -156,7 +156,7 @@ main.py → agent.py → llm/client.py
 |------|---------|
 | `agent.py` | `Agent.run()` 编排循环：LLM 调用捕获 `LLMError` 防崩溃、`asyncio.gather` 并行执行工具 + 120s 超时、连续 3 次相同调用自动终止；轮数耗尽时最后调一次 LLM（tools=[]）基于已有数据总结，不再直接报错；`_trimmed_llm_call()` 复用；Profile 上下文循环外注入；`last_usage` 属性暴露 token 统计 |
 | `main.py` | 输入循环 + 内置命令（`/help` `/chain` `/clear` `/exit`）；`_Spinner` 后台线程进度动画（100ms 旋转 + 实时秒数）；`_input_with_poll` 等待输入期间轮询调度通知；readline 历史支持 |
-| `llm/client.py` | `LLMClient.chat()` 封装 DeepSeek（兼容 OpenAI SDK），4次尝试（1+3重试），仅对 RateLimitError/APITimeoutError/InternalServerError 重试；显式传 `extra_body={"thinking": {"type": "disabled"}}` 关闭 deepseek-v4-flash 默认思考模式 |
+| `llm/client.py` | `LLMClient.chat()` 封装 DeepSeek（兼容 OpenAI SDK），4次尝试（1+3重试），仅对 RateLimitError/APITimeoutError/InternalServerError 重试 |
 | `memory/history.py` | `ConversationHistory` 滑动窗口截断 + `_trimmed_buffer` 暂存被 trim 消息 + `get_trimmed()`/`pop_trimmed()` 分离 peek/pop 语义；`from_dict()` 恢复后自动 `_trim()` 确保加载即裁剪；`save()` 原子写入（.tmp → .json 防损坏）；JSON 文件持久化（`~/.nimo/sessions/`） |
 | `memory/profile.py` | `UserProfile` 结构化长期记忆（`dict[str,str]` 键值对），独立于滑动窗口，`~/.nimo/profile.json` 持久化；启动时加载，通过 `to_context()` 注入到每条消息头部 `[用户信息]` |
 | `tools/registry.py` | `ToolRegistry` 单例 + `@register_tool` 装饰器 + `register_init()`/`init_all()` 通用初始化机制；`reset()` 用于测试隔离 |
