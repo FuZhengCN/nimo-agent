@@ -115,7 +115,7 @@ def print_response_box(text: str, token_summary: str | None = None, tool_counts:
 
 
 def print_welcome(model: str, cwd: str, version: str) -> None:
-    """打印 Claude Code 风格的欢迎画面。"""
+    """打印带边框的欢迎画面。"""
     import sys as _sys
     try:
         _sys.stdout.reconfigure(encoding="utf-8")
@@ -130,9 +130,20 @@ def print_welcome(model: str, cwd: str, version: str) -> None:
 
     logo_w = max(_display_width(line) for line in NIMO_LOGO)
 
+    content_lines = []
     for i in range(3):
         logo_line = _color_text(NIMO_LOGO[i].ljust(logo_w), C_LOGO)
-        print(f"{logo_line}   {info[i]}")
+        content_lines.append(f"{logo_line}   {info[i]}")
+    content_lines.append("")
+    content_lines.append(f"{GRAY_SUBTLE}  {_COMMAND_HINTS}{RESET}")
 
-    print()
-    print(f"{GRAY_SUBTLE}  {_COMMAND_HINTS}{RESET}")
+    max_w = max(_display_width(line) for line in content_lines)
+    pad = 2
+    inner_w = max_w + pad * 2
+
+    print(f"{BLUE_DEEP}╭{'─' * inner_w}╮{RESET}")
+    for line in content_lines:
+        dw = _display_width(line)
+        gap = " " * (max_w - dw)
+        print(f"{BLUE_DEEP}│{RESET}{' ' * pad}{line}{gap}{' ' * pad}{BLUE_DEEP}│{RESET}")
+    print(f"{BLUE_DEEP}╰{'─' * inner_w}╯{RESET}")
