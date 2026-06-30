@@ -306,56 +306,9 @@ def test_build_summary_prompt_truncates_tool_content():
 
 # --- 用户档案集成测试 ---
 
-@pytest.mark.asyncio
-async def test_agent_extracts_profile_on_trim(sample_config):
-    from nimo.agent import Agent
-
-    sample_config.llm.profile_extract = True
-    agent = Agent(sample_config)
-    agent._profile._facts.clear()  # 清除从磁盘加载的真实数据，保证测试隔离
-    agent._history._max_rounds = 1
-
-    agent._history.add({"role": "user", "content": "我叫张三"})
-    agent._history.add({"role": "assistant", "content": "你好张三"})
-
-    profile_response = make_mock_chat_response('{"姓名":"张三"}')
-    mock_chat = AsyncMock(return_value=profile_response)
-    agent._llm_client.chat = mock_chat
-
-    agent._history.add({"role": "user", "content": "帮我查项目"})
-    trimmed = agent._history.pop_trimmed()
-    with patch.object(agent._profile, "save"):
-        await agent._maybe_extract_profile(trimmed)
-
-    mock_chat.assert_called_once()
-    assert agent._profile.facts == {"姓名": "张三"}
-
-
-@pytest.mark.asyncio
-async def test_agent_no_profile_when_disabled(sample_config):
-    from nimo.agent import Agent
-
-    sample_config.llm.profile_extract = False
-    agent = Agent(sample_config)
-    agent._history._max_rounds = 1
-
-    agent._history.add({"role": "user", "content": "我叫李四"})
-    agent._history.add({"role": "assistant", "content": "你好"})
-
-    mock_chat = AsyncMock()
-    agent._llm_client.chat = mock_chat
-
-    agent._history.add({"role": "user", "content": "查项目"})
-    trimmed = agent._history.pop_trimmed()
-    await agent._maybe_extract_profile(trimmed)
-
-    mock_chat.assert_not_called()
-
-
 def test_agent_injects_profile_in_run(sample_config):
     from nimo.agent import Agent
 
-    sample_config.llm.profile_extract = True
     agent = Agent(sample_config)
     agent._profile.update({"姓名": "王五"})
     agent._llm_client.chat = AsyncMock(
@@ -371,7 +324,6 @@ def test_agent_injects_profile_in_run(sample_config):
 def test_clear_history_does_not_clear_profile(sample_config):
     from nimo.agent import Agent
 
-    sample_config.llm.profile_extract = True
     agent = Agent(sample_config)
     agent._profile._facts.clear()  # 清除从磁盘加载的真实数据，保证测试隔离
     agent._profile.update({"姓名": "张三"})
@@ -386,4 +338,5 @@ def test_agent_empty_profile_context_not_injected(sample_config):
     from nimo.agent import Agent
 
     agent = Agent(sample_config)
+    agent._profile._facts.clear()  # 清除从磁盘加载的真实数据，保证测试隔离
     assert agent._profile.to_context() is None

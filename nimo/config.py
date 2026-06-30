@@ -18,7 +18,6 @@ class LLMConfig:
     temperature: float = 0.3
     history_persist: bool = False
     history_summarize: bool = False
-    profile_extract: bool = False
 
 
 @dataclass
@@ -103,7 +102,6 @@ def load_config(path: str | None = None) -> Config:
         temperature=raw["llm"].get("temperature", 0.3),
         history_persist=raw["llm"].get("history_persist", False),
         history_summarize=raw["llm"].get("history_summarize", False),
-        profile_extract=raw["llm"].get("profile_extract", False),
     )
     tapd = TapdConfig(
         api_base=tapd_raw["api_base"],

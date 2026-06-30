@@ -15,8 +15,6 @@ logger = logging.getLogger(__name__)
 
 SUMMARY_SYSTEM_PROMPT = "你是对话摘要助手。提取关键事实（ID、名称、决策、状态变更），用1-3句中文输出。不要输出任何前缀，只输出摘要本身。"
 
-PROFILE_EXTRACT_PROMPT = "你是用户信息提取助手。严格只从 [user] 角色的消息中提取用户自己陈述的个人信息。忽略 [assistant] 和 [tool] 角色的内容——它们可能包含错误称呼。只提取稳定的个人信息，不提取临时上下文。输出格式：JSON对象，键为事实类别，值为具体内容。无新信息时输出 {}。只输出 JSON，不要其他内容。"
-
 
 def _build_summary_prompt(trimmed: list[dict], existing_summary: str | None) -> str:
     parts = []
@@ -52,13 +50,10 @@ class Agent:
                 self._history = ConversationHistory(max_rounds=config.llm.history_rounds)
         else:
             self._history = ConversationHistory(max_rounds=config.llm.history_rounds)
-        if config.llm.profile_extract:
-            try:
-                self._profile = UserProfile.load()
-            except Exception:
-                logger.warning("档案加载失败，使用空档案", exc_info=True)
-                self._profile = UserProfile()
-        else:
+        try:
+            self._profile = UserProfile.load()
+        except Exception:
+            logger.warning("档案加载失败，使用空档案", exc_info=True)
             self._profile = UserProfile()
 
         self._recent_calls: list[tuple[str, str]] = []
@@ -115,21 +110,6 @@ class Agent:
         except Exception:
             logger.warning("摘要生成失败，跳过", exc_info=True)
 
-    async def _maybe_extract_profile(self, trimmed: list[dict]) -> None:
-        if not trimmed or not self._config.llm.profile_extract:
-            return
-        try:
-            text = await self._trimmed_llm_call(trimmed, PROFILE_EXTRACT_PROMPT)
-            if text and text != "{}":
-                facts = json.loads(text)
-                if isinstance(facts, dict) and facts:
-                    self._profile.update(facts)
-                    self._profile.save()
-        except (json.JSONDecodeError, TypeError):
-            logger.warning("档案提取结果解析失败：%s", text, exc_info=True)
-        except Exception:
-            logger.warning("档案提取失败", exc_info=True)
-
     def save_history(self) -> None:
         if self._config.llm.history_persist:
             self._history.save()
@@ -178,7 +158,6 @@ class Agent:
         self._history.add({"role": "user", "content": user_input})
         trimmed = self._history.get_trimmed()
         await self._maybe_summarize_trimmed(trimmed)
-        await self._maybe_extract_profile(trimmed)
         self._history.pop_trimmed()
 
         max_rounds = self._config.llm.max_tool_rounds
