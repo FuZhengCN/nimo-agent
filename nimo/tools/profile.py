@@ -12,7 +12,7 @@ def _set_profile(p: UserProfile | None) -> None:
 
 @register_tool(
     name="profile_set",
-    description="记录或更新用户个人信息。用户说'记一下...'或'记住...'时使用。键相同则覆盖旧值，值为空则删除该键。",
+    description="记录或更新用户个人信息。用户说'记一下...'或'记住...'时使用。键相同则覆盖旧值。",
     parameters={
         "type": "object",
         "properties": {
@@ -25,6 +25,8 @@ def _set_profile(p: UserProfile | None) -> None:
 async def profile_set(key: str, value: str) -> ToolResult:
     if _profile is None:
         return ToolResult(success=False, error="用户档案未初始化")
+    if not value:
+        return ToolResult(success=False, error="值不能为空，如需删除请直接编辑 ~/.nimo/profile.json")
     _profile.update({key: value})
     _profile.save()
     return ToolResult(success=True, data={"key": key, "value": value})

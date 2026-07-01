@@ -58,8 +58,8 @@ async def test_profile_set_overwrites():
 
 
 @pytest.mark.asyncio
-async def test_profile_set_clear_by_empty_value():
-    """验证空值删除键。"""
+async def test_profile_set_rejects_empty_value():
+    """验证空值被拒绝，不删除已有键。"""
     from nimo.tools.profile import _set_profile
 
     p = UserProfile()
@@ -71,8 +71,9 @@ async def test_profile_set_clear_by_empty_value():
         "value": "",
     })
 
-    assert result.success
-    assert "姓名" not in p.facts
+    assert not result.success
+    assert "不能为空" in result.error
+    assert "姓名" in p.facts
     assert "角色" in p.facts
 
 
