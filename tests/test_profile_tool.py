@@ -1,4 +1,5 @@
 import pytest
+from unittest.mock import patch
 from nimo.memory.profile import UserProfile
 from nimo.tools.registry import ToolRegistry
 
@@ -20,6 +21,13 @@ def _isolate_registry():
     registry.execute = _original_execute
     yield
     registry.execute = saved
+
+
+@pytest.fixture(autouse=True)
+def _mock_profile_save():
+    """禁止 profile.save() 写入真实 ~/.nimo/profile.json。"""
+    with patch.object(UserProfile, "save", return_value=None):
+        yield
 
 
 @pytest.mark.asyncio
